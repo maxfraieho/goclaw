@@ -181,15 +181,28 @@ func getServiceURL(sess *Session, service string) string {
 	return urls[0]
 }
 
+// FlexBool handles JSON fields that may be bool (true/false) or number (0/1).
+type FlexBool bool
+
+func (b *FlexBool) UnmarshalJSON(data []byte) error {
+	switch string(data) {
+	case "true", "1":
+		*b = true
+	default:
+		*b = false
+	}
+	return nil
+}
+
 // ImageUploadResult holds the response from uploading an image to Zalo's file service.
 type ImageUploadResult struct {
-	NormalURL    string `json:"normalUrl"`
-	HDUrl        string `json:"hdUrl"`
-	ThumbURL     string `json:"thumbUrl"`
-	PhotoID      int64  `json:"photoId"`
-	ClientFileID int64  `json:"clientFileId"`
-	ChunkID      int    `json:"chunkId"`
-	Finished     bool   `json:"finished"`
+	NormalURL    string      `json:"normalUrl"`
+	HDUrl        string      `json:"hdUrl"`
+	ThumbURL     string      `json:"thumbUrl"`
+	PhotoID      json.Number `json:"photoId"`      // Zalo may return string or number
+	ClientFileID json.Number `json:"clientFileId"`  // Zalo may return string or number
+	ChunkID      int         `json:"chunkId"`
+	Finished     FlexBool    `json:"finished"`      // Zalo returns bool or int depending on endpoint
 
 	// Set by caller (not from API response).
 	Width     int `json:"-"`
@@ -426,11 +439,11 @@ func IsImageFile(filePath string) bool {
 
 // FileUploadResult holds the response from uploading a file to Zalo's file service.
 type FileUploadResult struct {
-	FileID       string `json:"fileId"`
-	FileURL      string `json:"fileUrl"`      // populated from WS callback
-	ClientFileID int64  `json:"clientFileId"`
-	ChunkID      int    `json:"chunkId"`
-	Finished     int    `json:"finished"`
+	FileID       string      `json:"fileId"`
+	FileURL      string      `json:"fileUrl"`      // populated from WS callback
+	ClientFileID json.Number `json:"clientFileId"`  // Zalo may return string or number
+	ChunkID      int         `json:"chunkId"`
+	Finished     int         `json:"finished"`
 
 	// Set by caller.
 	TotalSize int    `json:"-"`
@@ -569,7 +582,7 @@ func SendFile(ctx context.Context, sess *Session, threadID string, threadType Th
 		"extention":   ext, // Zalo typo: "extention" not "extension"
 		"totalSize":   upload.TotalSize,
 		"fileName":    upload.FileName,
-		"clientId":    strconv.FormatInt(upload.ClientFileID, 10),
+		"clientId":    upload.ClientFileID.String(),
 		"fType":       1,
 		"fileCount":   0,
 		"fdata":       "{}",
