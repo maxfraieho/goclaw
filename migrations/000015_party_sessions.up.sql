@@ -1,4 +1,4 @@
--- 000014_party_sessions.up.sql
+-- 000015_party_sessions.up.sql
 CREATE TABLE IF NOT EXISTS party_sessions (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v7(),
     topic       TEXT NOT NULL,
