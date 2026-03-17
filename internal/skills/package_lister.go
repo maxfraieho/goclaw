@@ -80,24 +80,26 @@ func listApkUserPackages(ctx context.Context) []PackageInfo {
 }
 
 // getApkVersion returns the installed version of an apk package, or empty string.
+// Uses "apk list --installed" which works without root and gives versioned output.
 func getApkVersion(ctx context.Context, name string) string {
-	cmd := exec.CommandContext(ctx, "apk", "info", "-v", name)
-	// Use Output() (stdout only) to avoid stderr warnings mixing in.
-	out, err := cmd.Output()
+	// Output format: "github-cli-2.72.0-r6 aarch64 {github-cli} (MIT) [installed]"
+	out, err := exec.CommandContext(ctx, "apk", "list", "--installed", name).Output()
 	if err != nil {
 		return ""
 	}
-	// Output: "github-cli-2.72.0-r0\n"
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "WARNING") {
+		if line == "" {
 			continue
 		}
-		// Strip the package name prefix to get version.
+		// Extract version: everything between "name-" and the first space.
 		if strings.HasPrefix(line, name+"-") {
-			return strings.TrimPrefix(line, name+"-")
+			rest := strings.TrimPrefix(line, name+"-")
+			if idx := strings.IndexByte(rest, ' '); idx > 0 {
+				return rest[:idx]
+			}
+			return rest
 		}
-		return line
 	}
 	return ""
 }
