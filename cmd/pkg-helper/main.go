@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+	"time"
 )
 
 const socketPath = "/tmp/pkg.sock"
@@ -39,16 +40,23 @@ func main() {
 	// Remove stale socket.
 	os.Remove(socketPath)
 
+	// Restrictive umask: socket created as 0660 (not default 0777).
+	oldMask := syscall.Umask(0117)
 	listener, err := net.Listen("unix", socketPath)
+	syscall.Umask(oldMask)
 	if err != nil {
 		slog.Error("pkg-helper: listen failed", "error", err)
 		os.Exit(1)
 	}
 	defer listener.Close()
 
-	// Set socket permissions: owner root, group goclaw (gid 1000), mode 0660.
-	if err := os.Chown(socketPath, 0, 1000); err != nil {
-		slog.Warn("pkg-helper: chown socket failed", "error", err)
+	// Socket permissions: owner root, group goclaw (gid 1000), mode 0660.
+	// Chown requires CAP_CHOWN; if missing (misconfigured container), warn but continue
+	// since umask already set restrictive permissions.
+	if os.Getuid() == 0 {
+		if err := os.Chown(socketPath, 0, 1000); err != nil {
+			slog.Warn("pkg-helper: chown socket failed (missing CAP_CHOWN?)", "error", err)
+		}
 	}
 	if err := os.Chmod(socketPath, 0660); err != nil {
 		slog.Warn("pkg-helper: chmod socket failed", "error", err)
@@ -65,15 +73,27 @@ func main() {
 		os.Exit(0)
 	}()
 
+	const maxConns = 3
+	sem := make(chan struct{}, maxConns)
+
 	slog.Info("pkg-helper: ready")
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			// Listener closed — exit.
 			break
 		}
-		go handleConn(conn)
+		select {
+		case sem <- struct{}{}:
+			go func(c net.Conn) {
+				defer func() { <-sem }()
+				c.SetDeadline(time.Now().Add(30 * time.Second)) //nolint:errcheck
+				handleConn(c)
+			}(conn)
+		default:
+			slog.Warn("pkg-helper: connection limit reached, rejecting")
+			conn.Close()
+		}
 	}
 }
 
@@ -146,10 +166,20 @@ func doUninstall(pkg string) response {
 	return response{OK: true}
 }
 
-// persistAdd appends a package name to the apk persist file.
+// persistAdd appends a package name to the apk persist file (dedup check).
 func persistAdd(pkg string) {
 	listFile := apkListFile()
-	f, err := os.OpenFile(listFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+
+	// Check if already persisted (avoid duplicates).
+	if data, err := os.ReadFile(listFile); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.TrimSpace(line) == pkg {
+				return // already persisted
+			}
+		}
+	}
+
+	f, err := os.OpenFile(listFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0640)
 	if err != nil {
 		slog.Warn("pkg-helper: persist add failed", "error", err)
 		return
@@ -159,6 +189,7 @@ func persistAdd(pkg string) {
 }
 
 // persistRemove removes a package name from the apk persist file.
+// Uses write-to-temp-then-rename for atomic update (avoids truncation on disk-full).
 func persistRemove(pkg string) {
 	listFile := apkListFile()
 	data, err := os.ReadFile(listFile)
@@ -174,7 +205,15 @@ func persistRemove(pkg string) {
 		}
 	}
 
-	os.WriteFile(listFile, []byte(strings.Join(kept, "\n")+"\n"), 0644) //nolint:errcheck
+	tmpFile := listFile + ".tmp"
+	if err := os.WriteFile(tmpFile, []byte(strings.Join(kept, "\n")+"\n"), 0640); err != nil {
+		slog.Warn("pkg-helper: persist remove write failed", "error", err)
+		return
+	}
+	if err := os.Rename(tmpFile, listFile); err != nil {
+		slog.Warn("pkg-helper: persist remove rename failed", "error", err)
+		os.Remove(tmpFile) //nolint:errcheck
+	}
 }
 
 func apkListFile() string {

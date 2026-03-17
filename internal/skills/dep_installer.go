@@ -107,20 +107,16 @@ func InstallDeps(ctx context.Context, manifest *SkillManifest, missing []string)
 	// System packages: install one by one via pkg-helper.
 	if len(sysPkgs) > 0 {
 		slog.Info("skills: installing system packages", "pkgs", sysPkgs)
-		var failed []string
+		var successful []string
 		for _, pkg := range sysPkgs {
 			ok, errMsg := apkViaHelper(ctx, "install", pkg)
 			if !ok {
-				failed = append(failed, fmt.Sprintf("apk %s: %s", pkg, errMsg))
+				result.Errors = append(result.Errors, fmt.Sprintf("apk %s: %s", pkg, errMsg))
+			} else {
+				successful = append(successful, pkg)
 			}
 		}
-		if len(failed) > 0 {
-			result.Errors = append(result.Errors, failed...)
-		}
-		// Report successfully installed (total minus failed).
-		if installed := len(sysPkgs) - len(failed); installed > 0 {
-			result.System = sysPkgs[:installed]
-		}
+		result.System = successful
 	}
 
 	if len(pipPkgs) > 0 {
@@ -227,6 +223,6 @@ func apkViaHelper(ctx context.Context, action, pkg string) (bool, string) {
 
 // cleanCaches removes pip and npm caches to save disk space.
 func cleanCaches(ctx context.Context) {
-	exec.CommandContext(ctx, "pip3", "cache", "purge").Run()  //nolint:errcheck
-	exec.CommandContext(ctx, "rm", "-rf", "/tmp/npm-*").Run() //nolint:errcheck
+	exec.CommandContext(ctx, "pip3", "cache", "purge").Run()          //nolint:errcheck
+	exec.CommandContext(ctx, "sh", "-c", "rm -rf /tmp/npm-*").Run()  //nolint:errcheck
 }

@@ -76,7 +76,8 @@ COPY --from=builder /out/pkg-helper /app/pkg-helper
 COPY --from=builder /src/migrations/ /app/migrations/
 COPY --from=builder /src/skills/ /app/bundled-skills/
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod +x /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh && \
+    chmod 755 /app/pkg-helper && chown root:root /app/pkg-helper
 
 # Create data directories (owned by goclaw user).
 # Binaries and entrypoint stay root-owned (readable by all).

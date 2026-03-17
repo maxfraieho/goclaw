@@ -30,6 +30,10 @@
     "uninstallSuccess": "{{name}} removed successfully",
     "uninstallError": "Failed to remove {{name}}"
   },
+  "confirmUninstall": {
+    "title": "Confirm Uninstall",
+    "description": "Are you sure you want to remove {{name}}? This action cannot be undone."
+  },
   "table": {
     "name": "Name",
     "version": "Version",

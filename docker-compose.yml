@@ -40,13 +40,13 @@ services:
       - goclaw-workspace:/app/workspace
     security_opt:
       - no-new-privileges:true
+    init: true
     cap_drop:
       - ALL
     cap_add:
       - SETUID
       - SETGID
       - CHOWN
-      - DAC_OVERRIDE
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=256m
     deploy:

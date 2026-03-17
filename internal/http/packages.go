@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"regexp"
 
+	"github.com/nextlevelbuilder/goclaw/internal/permissions"
 	"github.com/nextlevelbuilder/goclaw/internal/skills"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
 )
@@ -25,15 +26,23 @@ func NewPackagesHandler(token string) *PackagesHandler {
 
 // RegisterRoutes registers all package management routes on the given mux.
 func (h *PackagesHandler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /v1/packages", h.authMiddleware(h.handleList))
-	mux.HandleFunc("POST /v1/packages/install", h.authMiddleware(h.handleInstall))
-	mux.HandleFunc("POST /v1/packages/uninstall", h.authMiddleware(h.handleUninstall))
-	mux.HandleFunc("GET /v1/packages/runtimes", h.authMiddleware(h.handleRuntimes))
-	mux.HandleFunc("GET /v1/shell-deny-groups", h.authMiddleware(h.handleDenyGroups))
+	mux.HandleFunc("GET /v1/packages", h.readAuth(h.handleList))
+	mux.HandleFunc("POST /v1/packages/install", h.adminAuth(h.handleInstall))
+	mux.HandleFunc("POST /v1/packages/uninstall", h.adminAuth(h.handleUninstall))
+	mux.HandleFunc("GET /v1/packages/runtimes", h.readAuth(h.handleRuntimes))
+	mux.HandleFunc("GET /v1/shell-deny-groups", h.readAuth(h.handleDenyGroups))
 }
 
-func (h *PackagesHandler) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
+// readAuth allows viewer+ for read operations.
+func (h *PackagesHandler) readAuth(next http.HandlerFunc) http.HandlerFunc {
 	return requireAuth(h.token, "", next)
+}
+
+// adminAuth requires admin role for write operations (install/uninstall).
+// Prevents agents from calling these endpoints even if they obtain the gateway token,
+// since agent requests via browser pairing only get operator role.
+func (h *PackagesHandler) adminAuth(next http.HandlerFunc) http.HandlerFunc {
+	return requireAuth(h.token, permissions.RoleAdmin, next)
 }
 
 // handleList returns all installed packages grouped by category (system/pip/npm).
@@ -78,7 +87,11 @@ func (h *PackagesHandler) handleInstall(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	ok, errMsg := skills.InstallSingleDep(r.Context(), pkg)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": ok, "error": errMsg})
+	if !ok {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": errMsg})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // handleUninstall removes a single package.
@@ -89,7 +102,11 @@ func (h *PackagesHandler) handleUninstall(w http.ResponseWriter, r *http.Request
 		return
 	}
 	ok, errMsg := skills.UninstallPackage(r.Context(), pkg)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": ok, "error": errMsg})
+	if !ok {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "error": errMsg})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // handleRuntimes returns the availability of prerequisite runtimes.

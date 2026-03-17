@@ -26,7 +26,7 @@ export function usePackages() {
   const qc = useQueryClient();
   const connected = useAuthStore((s) => s.connected);
 
-  const { data, isPending: loading, refetch } = useQuery({
+  const { data, isFetching: loading, refetch } = useQuery({
     queryKey: queryKeys.packages.all,
     queryFn: () => http.get<InstalledPackages>("/v1/packages"),
     staleTime: 30_000,

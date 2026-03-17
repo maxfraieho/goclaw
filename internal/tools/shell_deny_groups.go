@@ -38,11 +38,14 @@ var DenyGroupRegistry = map[string]*DenyGroup{
 		Default:     true,
 		Patterns: []*regexp.Regexp{
 			regexp.MustCompile(`\bcurl\b.*\|\s*(ba)?sh\b`),                                              // curl | sh
-			regexp.MustCompile(`\bcurl\b.*(-d\b|-F\b|--data|--upload|--form|-T\b|-X\s*P(UT|OST|ATCH))`), // curl POST/PUT
-			regexp.MustCompile(`\bwget\b.*-O\s*-\s*\|\s*(ba)?sh\b`),                                     // wget | sh
-			regexp.MustCompile(`\bwget\b.*--post-(data|file)`),                                          // wget POST
-			regexp.MustCompile(`\b(nslookup|dig|host)\b`),                                               // DNS exfiltration
-			regexp.MustCompile(`/dev/tcp/`),                                                             // bash tcp redirect
+			regexp.MustCompile(`\bcurl\b.*(-d\b|-F\b|--data|--upload|--form|-T\b|(-X|--request)\s*P(UT|OST|ATCH))`), // curl POST/PUT
+			regexp.MustCompile(`\bwget\b.*-O\s*-\s*\|\s*(ba)?sh\b`),                                              // wget | sh
+			regexp.MustCompile(`\bwget\b.*(--post-(data|file)|--method=P(UT|OST|ATCH)|--body-data)`),             // wget POST
+			regexp.MustCompile(`\b(nslookup|dig|host)\b`),                                                        // DNS exfiltration
+			regexp.MustCompile(`/dev/tcp/`),                                                                       // bash tcp redirect
+			regexp.MustCompile(`\b(curl|wget)\b.*\blocalhost\b`),                                                  // curl/wget to localhost
+			regexp.MustCompile(`\b(curl|wget)\b.*\b127\.0\.0\.1\b`),                                              // curl/wget to 127.0.0.1
+			regexp.MustCompile(`\b(curl|wget)\b.*\b0\.0\.0\.0\b`),                                                // curl/wget to 0.0.0.0
 		},
 	},
 	"reverse_shell": {
@@ -50,14 +53,15 @@ var DenyGroupRegistry = map[string]*DenyGroup{
 		Description: "Reverse Shell",
 		Default:     true,
 		Patterns: []*regexp.Regexp{
-			regexp.MustCompile(`\b(nc|ncat|netcat)\b.*-[el]\b`),
+			regexp.MustCompile(`\b(nc|ncat|netcat)\b.*(\s+-[a-z]|\s+\d+\.\d+\.\d+\.\d+|\s+localhost\b)`),
 			regexp.MustCompile(`\bsocat\b`),
 			regexp.MustCompile(`\bopenssl\b.*s_client`),
 			regexp.MustCompile(`\btelnet\b.*\d+`),
-			regexp.MustCompile(`\bpython[23]?\b.*\bimport\s+(socket|http\.client|urllib|requests)\b`),
+			regexp.MustCompile(`\bpython[23]?\b.*(import|from)\s+(socket|http|urllib|requests|httpx|aiohttp)\b`),
 			regexp.MustCompile(`\bperl\b.*-e\s*.*\b[Ss]ocket\b`),
 			regexp.MustCompile(`\bruby\b.*-e\s*.*\b(TCPSocket|Socket)\b`),
-			regexp.MustCompile(`\bnode\b.*-e\s*.*\b(net\.connect|child_process)\b`),
+			regexp.MustCompile(`\bnode\b.*-e\s*.*\b(net\.|http\.|https\.|fetch\(|axios|got\(|undici)\b`),
+			regexp.MustCompile(`\bnode\b.*-e\s*.*require\s*\(\s*['"]https?['"]\s*\)`),
 			regexp.MustCompile(`\bawk\b.*/inet/`),
 			regexp.MustCompile(`\bmkfifo\b`),
 		},
@@ -168,6 +172,7 @@ var DenyGroupRegistry = map[string]*DenyGroup{
 			regexp.MustCompile(`\bpnpm\s+(add|install)\b`),
 			regexp.MustCompile(`\bpip3?\s+uninstall\b`),
 			regexp.MustCompile(`\bnpm\s+uninstall\b`),
+			regexp.MustCompile(`\bpython[23]?\b.*-m\s+pip\b`),
 		},
 	},
 	"persistence": {
@@ -203,6 +208,10 @@ var DenyGroupRegistry = map[string]*DenyGroup{
 			regexp.MustCompile(`/proc/[^/]+/environ`),
 			regexp.MustCompile(`/proc/self/environ`),
 			regexp.MustCompile(`(?i)\bstrings\b.*/proc/`),
+			regexp.MustCompile(`(?i)\becho\b.*\$\{?GOCLAW_(GATEWAY_TOKEN|ENCRYPTION_KEY|POSTGRES_DSN)`),
+			regexp.MustCompile(`(?i)\bprintf\b.*\$\{?GOCLAW_(GATEWAY_TOKEN|ENCRYPTION_KEY|POSTGRES_DSN)`),
+			regexp.MustCompile(`\bpython[23]?\b.*os\.(environ|getenv).*GOCLAW_`),
+			regexp.MustCompile(`\bnode\b.*-e.*process\.env\.GOCLAW_`),
 		},
 	},
 }

@@ -30,6 +30,10 @@
     "uninstallSuccess": "Đã gỡ {{name}} thành công",
     "uninstallError": "Gỡ {{name}} thất bại"
   },
+  "confirmUninstall": {
+    "title": "Xác nhận gỡ bỏ",
+    "description": "Bạn có chắc muốn gỡ {{name}}? Thao tác này không thể hoàn tác."
+  },
   "table": {
     "name": "Tên",
     "version": "Phiên bản",

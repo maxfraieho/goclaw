@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { RefreshCw, Loader2, Trash2, Download, CheckCircle2, XCircle } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { usePackages, type PackageInfo } from "./hooks/use-packages";
 import { usePackageRuntimes } from "./hooks/use-package-runtimes";
@@ -108,6 +109,7 @@ function PackageSection({ title, placeholder, packages, loading, onInstall, onUn
   const [input, setInput] = useState("");
   const [installStatus, setInstallStatus] = useState<ActionStatus>("idle");
   const [actionStatuses, setActionStatuses] = useState<Record<string, ActionStatus>>({});
+  const [uninstallTarget, setUninstallTarget] = useState<string | null>(null);
 
   async function handleInstall() {
     const pkg = input.trim();
@@ -203,7 +205,7 @@ function PackageSection({ title, placeholder, packages, loading, onInstall, onUn
                           variant="ghost"
                           size="sm"
                           className="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => handleUninstall(pkg.name)}
+                          onClick={() => setUninstallTarget(pkg.name)}
                           disabled={status === "loading"}
                         >
                           {status === "loading" ? (
@@ -221,6 +223,21 @@ function PackageSection({ title, placeholder, packages, loading, onInstall, onUn
           </tbody>
         </table>
       </div>
+
+      <ConfirmDialog
+        open={!!uninstallTarget}
+        onOpenChange={() => setUninstallTarget(null)}
+        title={t("confirmUninstall.title")}
+        description={t("confirmUninstall.description", { name: uninstallTarget })}
+        confirmLabel={t("actions.uninstall")}
+        variant="destructive"
+        onConfirm={async () => {
+          if (uninstallTarget) {
+            await handleUninstall(uninstallTarget);
+            setUninstallTarget(null);
+          }
+        }}
+      />
     </section>
   );
 }

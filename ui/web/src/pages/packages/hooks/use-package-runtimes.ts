@@ -19,7 +19,7 @@ export function usePackageRuntimes() {
   const http = useHttp();
   const connected = useAuthStore((s) => s.connected);
 
-  const { data, isPending: loading, refetch } = useQuery({
+  const { data, isFetching: loading, refetch } = useQuery({
     queryKey: queryKeys.packages.runtimes,
     queryFn: () => http.get<RuntimeStatus>("/v1/packages/runtimes"),
     staleTime: 120_000,

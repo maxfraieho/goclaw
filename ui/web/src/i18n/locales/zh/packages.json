@@ -30,6 +30,10 @@
     "uninstallSuccess": "{{name}} 已卸载",
     "uninstallError": "{{name}} 卸载失败"
   },
+  "confirmUninstall": {
+    "title": "确认卸载",
+    "description": "确定要卸载 {{name}} 吗？此操作不可撤销。"
+  },
   "table": {
     "name": "名称",
     "version": "版本",
