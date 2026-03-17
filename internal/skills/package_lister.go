@@ -81,20 +81,25 @@ func listApkUserPackages(ctx context.Context) []PackageInfo {
 
 // getApkVersion returns the installed version of an apk package, or empty string.
 func getApkVersion(ctx context.Context, name string) string {
-	out, err := exec.CommandContext(ctx, "apk", "info", "-v", name).CombinedOutput()
+	cmd := exec.CommandContext(ctx, "apk", "info", "-v", name)
+	// Use Output() (stdout only) to avoid stderr warnings mixing in.
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
-	// Output: "github-cli-2.72.0-r0"
-	line := strings.TrimSpace(string(out))
-	if idx := strings.IndexByte(line, '\n'); idx > 0 {
-		line = line[:idx]
+	// Output: "github-cli-2.72.0-r0\n"
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "WARNING") {
+			continue
+		}
+		// Strip the package name prefix to get version.
+		if strings.HasPrefix(line, name+"-") {
+			return strings.TrimPrefix(line, name+"-")
+		}
+		return line
 	}
-	// Strip the package name prefix to get version.
-	if strings.HasPrefix(line, name+"-") {
-		return strings.TrimPrefix(line, name+"-")
-	}
-	return line
+	return ""
 }
 
 // listPipPackages returns pip3-installed packages via JSON output.

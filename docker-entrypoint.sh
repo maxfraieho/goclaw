@@ -21,7 +21,10 @@ export PATH="$RUNTIME_DIR/npm-global/bin:$RUNTIME_DIR/pip/bin:$PATH"
 
 # System packages: re-install on-demand packages persisted across recreates.
 # Runs as root (entrypoint) — no doas needed.
+# Ensure persist file exists and is writable by both root (pkg-helper) and goclaw.
 APK_LIST="$RUNTIME_DIR/apk-packages"
+touch "$APK_LIST"
+chmod 0666 "$APK_LIST"
 if [ -f "$APK_LIST" ] && [ -s "$APK_LIST" ]; then
   echo "Re-installing persisted system packages..."
   # shellcheck disable=SC2046
