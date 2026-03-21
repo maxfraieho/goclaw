@@ -83,7 +83,7 @@ func (m *SessionsMethods) handlePreview(ctx context.Context, client *gateway.Cli
 	}
 
 	if !canSeeAll(client.Role(), m.cfg.Gateway.OwnerIDs, client.UserID()) {
-		sess := m.sessions.GetOrCreate(params.Key)
+		sess := m.sessions.GetOrCreate(ctx, params.Key)
 		if sess.UserID != client.UserID() {
 			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrUnauthorized, i18n.T(locale, i18n.MsgPermissionDenied, "session")))
 			return
@@ -121,7 +121,7 @@ func (m *SessionsMethods) handlePatch(ctx context.Context, client *gateway.Clien
 	}
 
 	if !canSeeAll(client.Role(), m.cfg.Gateway.OwnerIDs, client.UserID()) {
-		sess := m.sessions.GetOrCreate(params.Key)
+		sess := m.sessions.GetOrCreate(ctx, params.Key)
 		if sess.UserID != client.UserID() {
 			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrUnauthorized, i18n.T(locale, i18n.MsgPermissionDenied, "session")))
 			return
@@ -162,7 +162,7 @@ func (m *SessionsMethods) handleDelete(ctx context.Context, client *gateway.Clie
 	}
 
 	if !canSeeAll(client.Role(), m.cfg.Gateway.OwnerIDs, client.UserID()) {
-		sess := m.sessions.GetOrCreate(params.Key)
+		sess := m.sessions.GetOrCreate(ctx, params.Key)
 		if sess.UserID != client.UserID() {
 			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrUnauthorized, i18n.T(locale, i18n.MsgPermissionDenied, "session")))
 			return
@@ -189,7 +189,7 @@ func (m *SessionsMethods) handleReset(ctx context.Context, client *gateway.Clien
 	}
 
 	if !canSeeAll(client.Role(), m.cfg.Gateway.OwnerIDs, client.UserID()) {
-		sess := m.sessions.GetOrCreate(params.Key)
+		sess := m.sessions.GetOrCreate(ctx, params.Key)
 		if sess.UserID != client.UserID() {
 			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrUnauthorized, i18n.T(locale, i18n.MsgPermissionDenied, "session")))
 			return

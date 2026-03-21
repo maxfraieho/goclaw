@@ -38,7 +38,7 @@ func (m *CronMethods) Register(router *gateway.MethodRouter) {
 	router.Register(protocol.MethodCronRuns, m.handleRuns)
 }
 
-func (m *CronMethods) handleList(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+func (m *CronMethods) handleList(ctx context.Context, client *gateway.Client, req *protocol.RequestFrame) {
 	var params struct {
 		IncludeDisabled bool `json:"includeDisabled"`
 	}
@@ -50,7 +50,7 @@ func (m *CronMethods) handleList(_ context.Context, client *gateway.Client, req 
 	if !canSeeAll(client.Role(), m.cfg.Gateway.OwnerIDs, client.UserID()) {
 		userID = client.UserID()
 	}
-	jobs := m.service.ListJobs(params.IncludeDisabled, "", userID)
+	jobs := m.service.ListJobs(ctx, params.IncludeDisabled, "", userID)
 
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{
 		"jobs":   jobs,
@@ -86,7 +86,7 @@ func (m *CronMethods) handleCreate(ctx context.Context, client *gateway.Client, 
 		return
 	}
 
-	job, err := m.service.AddJob(params.Name, params.Schedule, params.Message, params.Deliver, params.Channel, params.To, params.AgentID, client.UserID())
+	job, err := m.service.AddJob(ctx, params.Name, params.Schedule, params.Message, params.Deliver, params.Channel, params.To, params.AgentID, client.UserID())
 	if err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, err.Error()))
 		return

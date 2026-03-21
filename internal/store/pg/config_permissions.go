@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -76,10 +77,14 @@ func (s *PGConfigPermissionStore) CheckPermission(ctx context.Context, agentID u
 	s.mu.RUnlock()
 
 	// Fetch from DB.
+	tClause, tArgs, err := tenantClauseN(ctx, 3)
+	if err != nil {
+		return false, err
+	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT scope, config_type, permission FROM agent_config_permissions
-		 WHERE agent_id = $1 AND user_id = $2`,
-		agentID, userID,
+		 WHERE agent_id = $1 AND user_id = $2`+tClause,
+		append([]any{agentID, userID}, tArgs...)...,
 	)
 	if err != nil {
 		return false, err
@@ -146,14 +151,14 @@ func (s *PGConfigPermissionStore) Grant(ctx context.Context, perm *store.ConfigP
 	}
 	now := time.Now()
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO agent_config_permissions (agent_id, scope, config_type, user_id, permission, granted_by, metadata, created_at, updated_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)
+		`INSERT INTO agent_config_permissions (agent_id, scope, config_type, user_id, permission, granted_by, metadata, created_at, updated_at, tenant_id)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,$9)
 		 ON CONFLICT (agent_id, scope, config_type, user_id) DO UPDATE SET
 		        permission = EXCLUDED.permission,
 		        granted_by = EXCLUDED.granted_by,
 		        metadata = EXCLUDED.metadata,
 		        updated_at = EXCLUDED.updated_at`,
-		perm.AgentID, perm.Scope, perm.ConfigType, perm.UserID, perm.Permission, perm.GrantedBy, meta, now,
+		perm.AgentID, perm.Scope, perm.ConfigType, perm.UserID, perm.Permission, perm.GrantedBy, meta, now, tenantIDForInsert(ctx),
 	)
 	if err == nil {
 		s.InvalidateCache()
@@ -162,9 +167,13 @@ func (s *PGConfigPermissionStore) Grant(ctx context.Context, perm *store.ConfigP
 }
 
 func (s *PGConfigPermissionStore) Revoke(ctx context.Context, agentID uuid.UUID, scope, configType, userID string) error {
-	_, err := s.db.ExecContext(ctx,
-		`DELETE FROM agent_config_permissions WHERE agent_id = $1 AND scope = $2 AND config_type = $3 AND user_id = $4`,
-		agentID, scope, configType, userID,
+	tClause, tArgs, err := tenantClauseN(ctx, 5)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx,
+		`DELETE FROM agent_config_permissions WHERE agent_id = $1 AND scope = $2 AND config_type = $3 AND user_id = $4`+tClause,
+		append([]any{agentID, scope, configType, userID}, tArgs...)...,
 	)
 	if err == nil {
 		s.InvalidateCache()
@@ -173,6 +182,10 @@ func (s *PGConfigPermissionStore) Revoke(ctx context.Context, agentID uuid.UUID,
 }
 
 func (s *PGConfigPermissionStore) List(ctx context.Context, agentID uuid.UUID, configType, scope string) ([]store.ConfigPermission, error) {
+	tClause, tArgs, err := tenantClauseN(ctx, 0) // paramN unused; we append manually
+	if err != nil {
+		return nil, err
+	}
 	query := `SELECT id, agent_id, scope, config_type, user_id, permission, granted_by, metadata, created_at, updated_at
 	          FROM agent_config_permissions WHERE agent_id = $1`
 	args := []any{agentID}
@@ -184,6 +197,10 @@ func (s *PGConfigPermissionStore) List(ctx context.Context, agentID uuid.UUID, c
 	if scope != "" {
 		args = append(args, scope)
 		query += ` AND scope = $` + itoa(len(args))
+	}
+	if tClause != "" {
+		args = append(args, tArgs...)
+		query += fmt.Sprintf(" AND tenant_id = $%d", len(args))
 	}
 	query += ` ORDER BY created_at`
 
@@ -208,12 +225,16 @@ func (s *PGConfigPermissionStore) ListFileWriters(ctx context.Context, agentID u
 	}
 	s.fwMu.RUnlock()
 
+	tClause, tArgs, err := tenantClauseN(ctx, 3)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, agent_id, scope, config_type, user_id, permission, granted_by, metadata, created_at, updated_at
 		 FROM agent_config_permissions
-		 WHERE agent_id = $1 AND config_type = 'file_writer' AND scope = $2 AND permission = 'allow'
+		 WHERE agent_id = $1 AND config_type = 'file_writer' AND scope = $2 AND permission = 'allow'`+tClause+`
 		 ORDER BY created_at`,
-		agentID, scope,
+		append([]any{agentID, scope}, tArgs...)...,
 	)
 	if err != nil {
 		return nil, err

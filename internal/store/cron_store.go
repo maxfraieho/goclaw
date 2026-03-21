@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -96,9 +97,9 @@ type CronEvent struct {
 
 // CronStore manages scheduled jobs.
 type CronStore interface {
-	AddJob(name string, schedule CronSchedule, message string, deliver bool, channel, to, agentID, userID string) (*CronJob, error)
+	AddJob(ctx context.Context, name string, schedule CronSchedule, message string, deliver bool, channel, to, agentID, userID string) (*CronJob, error)
 	GetJob(jobID string) (*CronJob, bool)
-	ListJobs(includeDisabled bool, agentID, userID string) []CronJob
+	ListJobs(ctx context.Context, includeDisabled bool, agentID, userID string) []CronJob
 	RemoveJob(jobID string) error
 	UpdateJob(jobID string, patch CronJobPatch) (*CronJob, error)
 	EnableJob(jobID string, enabled bool) error

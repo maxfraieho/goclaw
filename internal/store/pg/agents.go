@@ -153,9 +153,20 @@ func (s *PGAgentStore) GetByKey(ctx context.Context, agentKey string) (*store.Ag
 }
 
 func (s *PGAgentStore) GetByID(ctx context.Context, id uuid.UUID) (*store.AgentData, error) {
-	row := s.db.QueryRowContext(ctx,
-		`SELECT `+agentSelectCols+`
-		 FROM agents WHERE id = $1 AND deleted_at IS NULL`, id)
+	var row *sql.Row
+	if store.IsCrossTenant(ctx) {
+		row = s.db.QueryRowContext(ctx,
+			`SELECT `+agentSelectCols+`
+			 FROM agents WHERE id = $1 AND deleted_at IS NULL`, id)
+	} else {
+		tid := store.TenantIDFromContext(ctx)
+		if tid == uuid.Nil {
+			return nil, fmt.Errorf("agent not found: %s", id)
+		}
+		row = s.db.QueryRowContext(ctx,
+			`SELECT `+agentSelectCols+`
+			 FROM agents WHERE id = $1 AND deleted_at IS NULL AND tenant_id = $2`, id, tid)
+	}
 	d, err := scanAgentRow(row)
 	if err != nil {
 		return nil, fmt.Errorf("agent not found: %s", id)
@@ -180,9 +191,18 @@ func (s *PGAgentStore) Update(ctx context.Context, id uuid.UUID, updates map[str
 	}
 
 	updates["updated_at"] = time.Now()
-	err := execMapUpdateWhere(ctx, s.db, "agents", updates, "id = $IDX AND deleted_at IS NULL", id)
-	if err != nil {
-		return err
+	if store.IsCrossTenant(ctx) {
+		if err := execMapUpdateWhere(ctx, s.db, "agents", updates, "id = $IDX AND deleted_at IS NULL", id); err != nil {
+			return err
+		}
+	} else {
+		tid := store.TenantIDFromContext(ctx)
+		if tid == uuid.Nil {
+			return fmt.Errorf("agent not found: %s", id)
+		}
+		if err := execMapUpdateWhereTenant(ctx, s.db, "agents", updates, id, tid); err != nil {
+			return err
+		}
 	}
 
 	// Regenerate embedding when frontmatter changes
@@ -446,4 +466,30 @@ func replaceIDX(s, replacement string) string {
 		}
 	}
 	return result.String()
+}
+
+// execMapUpdateWhereTenant is like execMapUpdateWhere but appends an AND tenant_id = $N filter.
+// Column names are validated to prevent SQL injection.
+func execMapUpdateWhereTenant(ctx context.Context, db *sql.DB, table string, updates map[string]any, id, tenantID uuid.UUID) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	var setClauses []string
+	var args []any
+	i := 1
+	for col, val := range updates {
+		if !validColumnName.MatchString(col) {
+			slog.Warn("security.invalid_column_name", "table", table, "column", col)
+			return fmt.Errorf("invalid column name: %q", col)
+		}
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", col, i))
+		args = append(args, val)
+		i++
+	}
+	// $i = id, $i+1 = tenantID
+	args = append(args, id, tenantID)
+	q := fmt.Sprintf("UPDATE %s SET %s WHERE id = $%d AND deleted_at IS NULL AND tenant_id = $%d",
+		table, joinStrings(setClauses, ", "), i, i+1)
+	_, err := db.ExecContext(ctx, q, args...)
+	return err
 }

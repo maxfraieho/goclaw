@@ -86,6 +86,12 @@ type ResolverDeps struct {
 
 	// Memory store for extractive memory fallback
 	MemoryStore store.MemoryStore
+
+	// Tenant store for workspace path resolution
+	TenantStore store.TenantStore
+
+	// Global workspace root (GOCLAW_WORKSPACE)
+	Workspace string
 }
 
 // NewManagedResolver creates a ResolverFunc that builds Loops from DB agent data.
@@ -207,13 +213,22 @@ func NewManagedResolver(deps ResolverDeps) ResolverFunc {
 			sandboxCfgOverride = &resolved
 		}
 
-		// Expand ~ in workspace path and ensure directory exists
+		// Expand ~ in workspace path and ensure directory exists.
+		// For non-master tenants, prefix workspace with tenant slug directory.
 		workspace := ag.Workspace
 		if workspace != "" {
 			workspace = config.ExpandHome(workspace)
 			if !filepath.IsAbs(workspace) {
 				workspace, _ = filepath.Abs(workspace)
 			}
+		}
+		if ag.TenantID != store.MasterTenantID && ag.TenantID != uuid.Nil {
+			tenantSlug := resolveTenantSlug(deps.TenantStore, ag.TenantID)
+			if deps.Workspace != "" {
+				workspace = config.TenantWorkspace(deps.Workspace, ag.TenantID, tenantSlug)
+			}
+		}
+		if workspace != "" {
 			if err := os.MkdirAll(workspace, 0755); err != nil {
 				slog.Warn("failed to create agent workspace directory", "workspace", workspace, "agent", agentKey, "error", err)
 			}
@@ -297,6 +312,13 @@ func NewManagedResolver(deps ResolverDeps) ResolverFunc {
 			}
 		}
 
+		// Resolve tenant-scoped DataDir for team workspace resolution.
+		dataDir := deps.DataDir
+		if ag.TenantID != store.MasterTenantID && ag.TenantID != uuid.Nil {
+			tenantSlug := resolveTenantSlug(deps.TenantStore, ag.TenantID)
+			dataDir = config.TenantDataDir(deps.DataDir, ag.TenantID, tenantSlug)
+		}
+
 		restrictVal := true // always restrict agents to their workspace
 		loop := NewLoop(LoopConfig{
 			ID:                     ag.AgentKey,
@@ -308,7 +330,7 @@ func NewManagedResolver(deps ResolverDeps) ResolverFunc {
 			MaxTokens:              ag.ParseMaxTokens(),
 			MaxIterations:          maxIter,
 			Workspace:              workspace,
-			DataDir:                deps.DataDir,
+			DataDir:                dataDir,
 			RestrictToWs:           &restrictVal,
 			SubagentsCfg:           ag.ParseSubagentsConfig(),
 			MemoryCfg:              ag.ParseMemoryConfig(),
@@ -372,6 +394,19 @@ func (r *Router) InvalidateAll() {
 	defer r.mu.Unlock()
 	r.agents = make(map[string]*agentEntry)
 	slog.Debug("invalidated all agent caches")
+}
+
+// resolveTenantSlug looks up the tenant slug for workspace path resolution.
+// Returns the tenant ID string as fallback if lookup fails.
+func resolveTenantSlug(ts store.TenantStore, tenantID uuid.UUID) string {
+	if ts == nil {
+		return tenantID.String()
+	}
+	tenant, err := ts.GetTenant(context.Background(), tenantID)
+	if err != nil || tenant == nil {
+		return tenantID.String()
+	}
+	return tenant.Slug
 }
 
 func derefInt(p *int) int {

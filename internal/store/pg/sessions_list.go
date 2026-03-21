@@ -1,6 +1,7 @@
 package pg
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -41,6 +42,12 @@ func buildSessionFilter(opts store.SessionListOpts, tableAlias string) (string, 
 		args = append(args, opts.UserID)
 		idx++
 	}
+	if opts.TenantID != uuid.Nil {
+		conditions = append(conditions, fmt.Sprintf("%stenant_id = $%d", prefix, idx))
+		args = append(args, opts.TenantID)
+		idx++
+	}
+	_ = idx // consumed
 
 	if len(conditions) == 0 {
 		return "", nil
@@ -303,7 +310,7 @@ func (s *PGSessionStore) LastUsedChannel(agentID string) (string, string) {
 
 // --- helpers ---
 
-func (s *PGSessionStore) getOrInit(key string) *store.SessionData {
+func (s *PGSessionStore) getOrInit(ctx context.Context, key string) *store.SessionData {
 	if data, ok := s.cache[key]; ok {
 		return data
 	}
@@ -327,9 +334,9 @@ func (s *PGSessionStore) getOrInit(key string) *store.SessionData {
 
 	msgsJSON, _ := json.Marshal([]providers.Message{})
 	s.db.Exec(
-		`INSERT INTO sessions (id, session_key, messages, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5) ON CONFLICT (session_key) DO NOTHING`,
-		uuid.Must(uuid.NewV7()), key, msgsJSON, now, now,
+		`INSERT INTO sessions (id, session_key, messages, created_at, updated_at, tenant_id)
+		 VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (session_key) DO NOTHING`,
+		uuid.Must(uuid.NewV7()), key, msgsJSON, now, now, tenantIDForInsert(ctx),
 	)
 	return data
 }

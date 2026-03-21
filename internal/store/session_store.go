@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -52,11 +53,12 @@ type SessionInfo struct {
 
 // SessionListOpts holds pagination options for ListPaged.
 type SessionListOpts struct {
-	AgentID string
-	Channel string // optional: filter by channel prefix ("ws", "telegram", etc.)
-	UserID  string // optional: filter by user_id
-	Limit   int
-	Offset  int
+	AgentID  string
+	Channel  string    // optional: filter by channel prefix ("ws", "telegram", etc.)
+	UserID   string    // optional: filter by user_id
+	TenantID uuid.UUID // optional: filter by tenant (uuid.Nil = no filter)
+	Limit    int
+	Offset   int
 }
 
 // SessionListResult is the paginated result of ListPaged.
@@ -86,7 +88,7 @@ type SessionListRichResult struct {
 
 // SessionStore manages conversation sessions.
 type SessionStore interface {
-	GetOrCreate(key string) *SessionData
+	GetOrCreate(ctx context.Context, key string) *SessionData
 	AddMessage(key string, msg providers.Message)
 	GetHistory(key string) []providers.Message
 	GetSummary(key string) string

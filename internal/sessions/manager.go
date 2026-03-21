@@ -1,6 +1,7 @@
 package sessions
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -63,7 +64,7 @@ func SessionKey(agentID, scopeKey string) string {
 }
 
 // GetOrCreate returns an existing session or creates a new one.
-func (m *Manager) GetOrCreate(key string) *Session {
+func (m *Manager) GetOrCreate(_ context.Context, key string) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

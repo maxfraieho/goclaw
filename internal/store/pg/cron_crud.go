@@ -1,6 +1,7 @@
 package pg
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -10,7 +11,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
-func (s *PGCronStore) AddJob(name string, schedule store.CronSchedule, message string, deliver bool, channel, to, agentID, userID string) (*store.CronJob, error) {
+func (s *PGCronStore) AddJob(ctx context.Context, name string, schedule store.CronSchedule, message string, deliver bool, channel, to, agentID, userID string) (*store.CronJob, error) {
 	// Apply default timezone for cron expressions when not set per-job.
 	if schedule.TZ == "" && schedule.Kind == "cron" && s.defaultTZ != "" {
 		schedule.TZ = s.defaultTZ
@@ -65,10 +66,10 @@ func (s *PGCronStore) AddJob(name string, schedule store.CronSchedule, message s
 	nextRun := computeNextRun(&schedule, now, s.defaultTZ)
 
 	_, err := s.db.Exec(
-		`INSERT INTO cron_jobs (id, agent_id, user_id, name, enabled, schedule_kind, cron_expression, run_at, timezone,
+		`INSERT INTO cron_jobs (id, tenant_id, agent_id, user_id, name, enabled, schedule_kind, cron_expression, run_at, timezone,
 		 interval_ms, payload, delete_after_run, next_run_at, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, true, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-		id, agentUUID, userIDPtr, name, scheduleKind, cronExpr, runAt, tz,
+		 VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+		id, tenantIDForInsert(ctx), agentUUID, userIDPtr, name, scheduleKind, cronExpr, runAt, tz,
 		intervalMS, payloadJSON, deleteAfterRun, nextRun, now, now,
 	)
 	if err != nil {
@@ -93,7 +94,7 @@ func (s *PGCronStore) GetJob(jobID string) (*store.CronJob, bool) {
 	return job, true
 }
 
-func (s *PGCronStore) ListJobs(includeDisabled bool, agentID, userID string) []store.CronJob {
+func (s *PGCronStore) ListJobs(ctx context.Context, includeDisabled bool, agentID, userID string) []store.CronJob {
 	q := `SELECT id, tenant_id, agent_id, user_id, name, enabled, schedule_kind, cron_expression, run_at, timezone,
 		 interval_ms, payload, delete_after_run, next_run_at, last_run_at, last_status, last_error,
 		 created_at, updated_at FROM cron_jobs WHERE 1=1`
@@ -116,6 +117,11 @@ func (s *PGCronStore) ListJobs(includeDisabled bool, agentID, userID string) []s
 	if userID != "" {
 		q += fmt.Sprintf(" AND user_id = $%d", argIdx)
 		args = append(args, userID)
+		argIdx++
+	}
+	if clause, targs, err := tenantClauseN(ctx, argIdx); err == nil && clause != "" {
+		q += clause
+		args = append(args, targs...)
 		argIdx++
 	}
 

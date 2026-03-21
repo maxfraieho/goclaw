@@ -48,18 +48,32 @@ func (s *PGTeamStore) CreateTeam(ctx context.Context, team *store.TeamData) erro
 		settings = json.RawMessage(`{}`)
 	}
 
+	tenantID := store.TenantIDFromContext(ctx)
+	if tenantID == uuid.Nil {
+		tenantID = store.MasterTenantID
+	}
+
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO agent_teams (id, name, lead_agent_id, description, status, settings, created_by, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		`INSERT INTO agent_teams (id, name, lead_agent_id, description, status, settings, created_by, created_at, updated_at, tenant_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		team.ID, team.Name, team.LeadAgentID, team.Description,
-		team.Status, settings, team.CreatedBy, now, now,
+		team.Status, settings, team.CreatedBy, now, now, tenantID,
 	)
 	return err
 }
 
 func (s *PGTeamStore) GetTeam(ctx context.Context, teamID uuid.UUID) (*store.TeamData, error) {
+	if store.IsCrossTenant(ctx) {
+		row := s.db.QueryRowContext(ctx,
+			`SELECT `+teamSelectCols+` FROM agent_teams WHERE id = $1`, teamID)
+		return scanTeamRow(row)
+	}
+	tenantID := store.TenantIDFromContext(ctx)
+	if tenantID == uuid.Nil {
+		return nil, nil
+	}
 	row := s.db.QueryRowContext(ctx,
-		`SELECT `+teamSelectCols+` FROM agent_teams WHERE id = $1`, teamID)
+		`SELECT `+teamSelectCols+` FROM agent_teams WHERE id = $1 AND tenant_id = $2`, teamID, tenantID)
 	return scanTeamRow(row)
 }
 
@@ -73,13 +87,24 @@ func (s *PGTeamStore) DeleteTeam(ctx context.Context, teamID uuid.UUID) error {
 }
 
 func (s *PGTeamStore) ListTeams(ctx context.Context) ([]store.TeamData, error) {
+	var tenantFilter string
+	var queryArgs []any
+	if !store.IsCrossTenant(ctx) {
+		tenantID := store.TenantIDFromContext(ctx)
+		if tenantID == uuid.Nil {
+			return nil, nil
+		}
+		tenantFilter = " WHERE t.tenant_id = $1"
+		queryArgs = append(queryArgs, tenantID)
+	}
+
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT t.id, t.name, t.lead_agent_id, t.description, t.status, t.settings, t.created_by, t.created_at, t.updated_at,
 		 COALESCE(a.agent_key, '') AS lead_agent_key,
 		 COALESCE(a.display_name, '') AS lead_display_name
 		 FROM agent_teams t
-		 LEFT JOIN agents a ON a.id = t.lead_agent_id
-		 ORDER BY t.created_at`)
+		 LEFT JOIN agents a ON a.id = t.lead_agent_id`+tenantFilter+`
+		 ORDER BY t.created_at`, queryArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -314,12 +339,23 @@ func (s *PGTeamStore) ListTeamGrants(ctx context.Context, teamID uuid.UUID) ([]s
 }
 
 func (s *PGTeamStore) ListUserTeams(ctx context.Context, userID string) ([]store.TeamData, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+teamSelectCols+`
+	baseQuery := `SELECT ` + teamSelectCols + `
 		 FROM agent_teams t
 		 WHERE t.status = $1
-		   AND EXISTS (SELECT 1 FROM team_user_grants g WHERE g.team_id = t.id AND g.user_id = $2)
-		 ORDER BY t.created_at DESC`, store.TeamStatusActive, userID)
+		   AND EXISTS (SELECT 1 FROM team_user_grants g WHERE g.team_id = t.id AND g.user_id = $2)`
+	args := []any{store.TeamStatusActive, userID}
+
+	if !store.IsCrossTenant(ctx) {
+		tenantID := store.TenantIDFromContext(ctx)
+		if tenantID == uuid.Nil {
+			return nil, nil
+		}
+		baseQuery += ` AND t.tenant_id = $3`
+		args = append(args, tenantID)
+	}
+	baseQuery += ` ORDER BY t.created_at DESC`
+
+	rows, err := s.db.QueryContext(ctx, baseQuery, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -148,7 +148,7 @@ func (t *SessionStatusTool) Execute(ctx context.Context, args map[string]any) *R
 		return ErrorResult("access denied: session belongs to a different agent")
 	}
 
-	data := t.sessions.GetOrCreate(sessionKey)
+	data := t.sessions.GetOrCreate(ctx, sessionKey)
 
 	var lines []string
 	lines = append(lines, fmt.Sprintf("Session: %s", data.Key))

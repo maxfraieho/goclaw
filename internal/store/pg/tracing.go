@@ -26,18 +26,22 @@ func (s *PGTracingStore) CreateTrace(ctx context.Context, trace *store.TraceData
 	if trace.ID == uuid.Nil {
 		trace.ID = store.GenNewID()
 	}
+	tenantID := store.TenantIDFromContext(ctx)
+	if tenantID == uuid.Nil {
+		tenantID = store.MasterTenantID
+	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO traces (id, parent_trace_id, agent_id, user_id, session_key, run_id, start_time, end_time,
 		 duration_ms, name, channel, input_preview, output_preview,
 		 total_input_tokens, total_output_tokens, total_cost, span_count, llm_call_count, tool_call_count,
-		 status, error, metadata, tags, team_id, created_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)`,
+		 status, error, metadata, tags, team_id, created_at, tenant_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)`,
 		trace.ID, nilUUID(trace.ParentTraceID), nilUUID(trace.AgentID), nilStr(trace.UserID), nilStr(trace.SessionKey),
 		nilStr(trace.RunID), trace.StartTime, nilTime(trace.EndTime),
 		nilInt(trace.DurationMS), nilStr(trace.Name), nilStr(trace.Channel),
 		nilStr(trace.InputPreview), nilStr(trace.OutputPreview),
 		trace.TotalInputTokens, trace.TotalOutputTokens, trace.TotalCost, trace.SpanCount, trace.LLMCallCount, trace.ToolCallCount,
-		trace.Status, nilStr(trace.Error), jsonOrEmpty(trace.Metadata), pqStringArray(trace.Tags), nilUUID(trace.TeamID), trace.CreatedAt,
+		trace.Status, nilStr(trace.Error), jsonOrEmpty(trace.Metadata), pqStringArray(trace.Tags), nilUUID(trace.TeamID), trace.CreatedAt, tenantID,
 	)
 	return err
 }
@@ -55,13 +59,22 @@ func (s *PGTracingStore) GetTrace(ctx context.Context, traceID uuid.UUID) (*stor
 	var metadata *[]byte
 	var tags []byte
 
-	err := s.db.QueryRowContext(ctx,
-		`SELECT id, parent_trace_id, agent_id, user_id, session_key, run_id, start_time, end_time,
+	query := `SELECT id, parent_trace_id, agent_id, user_id, session_key, run_id, start_time, end_time,
 		 duration_ms, name, channel, input_preview, output_preview,
 		 total_input_tokens, total_output_tokens, COALESCE(total_cost, 0), span_count, llm_call_count, tool_call_count,
 		 status, error, metadata, tags, team_id, created_at
-		 FROM traces WHERE id = $1`, traceID,
-	).Scan(&d.ID, &parentTraceID, &agentID, &userID, &sessionKey, &runID, &d.StartTime, &endTime,
+		 FROM traces WHERE id = $1`
+	qArgs := []any{traceID}
+	if !store.IsCrossTenant(ctx) {
+		tenantID := store.TenantIDFromContext(ctx)
+		if tenantID == uuid.Nil {
+			return nil, sql.ErrNoRows
+		}
+		query += ` AND tenant_id = $2`
+		qArgs = append(qArgs, tenantID)
+	}
+
+	err := s.db.QueryRowContext(ctx, query, qArgs...).Scan(&d.ID, &parentTraceID, &agentID, &userID, &sessionKey, &runID, &d.StartTime, &endTime,
 		&durationMS, &name, &channel, &inputPreview, &outputPreview,
 		&d.TotalInputTokens, &d.TotalOutputTokens, &d.TotalCost, &d.SpanCount, &d.LLMCallCount, &d.ToolCallCount,
 		&d.Status, &errStr, &metadata, &tags, &teamID, &d.CreatedAt)
@@ -91,10 +104,19 @@ func (s *PGTracingStore) GetTrace(ctx context.Context, traceID uuid.UUID) (*stor
 	return &d, nil
 }
 
-func buildTraceWhere(opts store.TraceListOpts) (string, []any) {
+func buildTraceWhere(ctx context.Context, opts store.TraceListOpts) (string, []any) {
 	var conditions []string
 	var args []any
 	argIdx := 1
+
+	if !store.IsCrossTenant(ctx) {
+		tenantID := store.TenantIDFromContext(ctx)
+		if tenantID != uuid.Nil {
+			conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIdx))
+			args = append(args, tenantID)
+			argIdx++
+		}
+	}
 
 	if opts.AgentID != nil {
 		conditions = append(conditions, fmt.Sprintf("agent_id = $%d", argIdx))
@@ -130,14 +152,14 @@ func buildTraceWhere(opts store.TraceListOpts) (string, []any) {
 }
 
 func (s *PGTracingStore) CountTraces(ctx context.Context, opts store.TraceListOpts) (int, error) {
-	where, args := buildTraceWhere(opts)
+	where, args := buildTraceWhere(ctx, opts)
 	var count int
 	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM traces"+where, args...).Scan(&count)
 	return count, err
 }
 
 func (s *PGTracingStore) ListTraces(ctx context.Context, opts store.TraceListOpts) ([]store.TraceData, error) {
-	where, args := buildTraceWhere(opts)
+	where, args := buildTraceWhere(ctx, opts)
 
 	q := `SELECT id, parent_trace_id, agent_id, user_id, session_key, run_id, start_time, end_time,
 		 duration_ms, name, channel, input_preview, output_preview,
@@ -439,6 +461,15 @@ func (s *PGTracingStore) GetCostSummary(ctx context.Context, opts store.CostSumm
 
 	// Only root traces (not delegations)
 	conditions = append(conditions, "parent_trace_id IS NULL")
+
+	if !store.IsCrossTenant(ctx) {
+		tenantID := store.TenantIDFromContext(ctx)
+		if tenantID != uuid.Nil {
+			conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIdx))
+			args = append(args, tenantID)
+			argIdx++
+		}
+	}
 
 	if opts.AgentID != nil {
 		conditions = append(conditions, fmt.Sprintf("agent_id = $%d", argIdx))

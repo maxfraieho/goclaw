@@ -61,9 +61,9 @@ func (s *PGPairingStore) RequestPairing(senderID, channel, chatID, accountID str
 	code := generatePairingCode()
 	now := time.Now()
 	_, err = s.db.Exec(
-		`INSERT INTO pairing_requests (id, code, sender_id, channel, chat_id, account_id, expires_at, created_at, metadata)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		uuid.Must(uuid.NewV7()), code, senderID, channel, chatID, accountID, now.Add(codeTTL), now, metaJSON,
+		`INSERT INTO pairing_requests (id, code, sender_id, channel, chat_id, account_id, expires_at, created_at, metadata, tenant_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		uuid.Must(uuid.NewV7()), code, senderID, channel, chatID, accountID, now.Add(codeTTL), now, metaJSON, store.MasterTenantID,
 	)
 	if err != nil {
 		return "", fmt.Errorf("create pairing request: %w", err)
@@ -95,9 +95,9 @@ func (s *PGPairingStore) ApprovePairing(code, approvedBy string) (*store.PairedD
 	now := time.Now()
 	expiresAt := now.Add(pairedDeviceTTL)
 	_, err = s.db.Exec(
-		`INSERT INTO paired_devices (id, sender_id, channel, chat_id, paired_by, paired_at, metadata, expires_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		uuid.Must(uuid.NewV7()), senderID, channel, chatID, approvedBy, now, metaJSON, expiresAt,
+		`INSERT INTO paired_devices (id, sender_id, channel, chat_id, paired_by, paired_at, metadata, expires_at, tenant_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		uuid.Must(uuid.NewV7()), senderID, channel, chatID, approvedBy, now, metaJSON, expiresAt, store.MasterTenantID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create paired device: %w", err)

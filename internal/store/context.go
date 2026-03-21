@@ -33,6 +33,8 @@ const (
 	TenantIDKey contextKey = "goclaw_tenant_id"
 	// CrossTenantKey indicates the caller has cross-tenant access (owner/system admin).
 	CrossTenantKey contextKey = "goclaw_cross_tenant"
+	// TenantSlugKey stores the tenant's URL-safe slug for filesystem paths.
+	TenantSlugKey contextKey = "goclaw_tenant_slug"
 )
 
 // WithShellDenyGroups returns a new context with shell deny group overrides.
@@ -188,4 +190,17 @@ func WithCrossTenant(ctx context.Context) context.Context {
 func IsCrossTenant(ctx context.Context) bool {
 	v, _ := ctx.Value(CrossTenantKey).(bool)
 	return v
+}
+
+// WithTenantSlug returns a new context with the given tenant slug.
+func WithTenantSlug(ctx context.Context, slug string) context.Context {
+	return context.WithValue(ctx, TenantSlugKey, slug)
+}
+
+// TenantSlugFromContext extracts the tenant slug from context. Returns "" if not set.
+func TenantSlugFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(TenantSlugKey).(string); ok {
+		return v
+	}
+	return ""
 }

@@ -75,7 +75,7 @@ func (t *SessionsSendTool) Execute(ctx context.Context, args map[string]any) *Re
 		sessions := t.sessions.List(agentID)
 		for _, s := range sessions {
 			// Check if label matches by loading session data
-			data := t.sessions.GetOrCreate(s.Key)
+			data := t.sessions.GetOrCreate(ctx, s.Key)
 			if data.Label == label {
 				sessionKey = s.Key
 				break

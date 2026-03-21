@@ -11,6 +11,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
+
 // PGContactStore implements store.ContactStore backed by Postgres.
 type PGContactStore struct {
 	db *sql.DB
@@ -22,9 +23,13 @@ func NewPGContactStore(db *sql.DB) *PGContactStore {
 }
 
 func (s *PGContactStore) UpsertContact(ctx context.Context, channelType, channelInstance, senderID, userID, displayName, username, peerKind string) error {
+	tenantID := store.TenantIDFromContext(ctx)
+	if tenantID == uuid.Nil {
+		tenantID = store.MasterTenantID
+	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO channel_contacts (channel_type, channel_instance, sender_id, user_id, display_name, username, peer_kind)
-		VALUES ($1, NULLIF($2,''), $3, NULLIF($4,''), NULLIF($5,''), NULLIF($6,''), NULLIF($7,''))
+		INSERT INTO channel_contacts (channel_type, channel_instance, sender_id, user_id, display_name, username, peer_kind, tenant_id)
+		VALUES ($1, NULLIF($2,''), $3, NULLIF($4,''), NULLIF($5,''), NULLIF($6,''), NULLIF($7,''), $8)
 		ON CONFLICT (channel_type, sender_id) DO UPDATE SET
 			display_name     = COALESCE(NULLIF($5,''), channel_contacts.display_name),
 			username         = COALESCE(NULLIF($6,''), channel_contacts.username),
@@ -32,15 +37,24 @@ func (s *PGContactStore) UpsertContact(ctx context.Context, channelType, channel
 			channel_instance = COALESCE(NULLIF($2,''), channel_contacts.channel_instance),
 			peer_kind        = COALESCE(NULLIF($7,''), channel_contacts.peer_kind),
 			last_seen_at     = NOW()`,
-		channelType, channelInstance, senderID, userID, displayName, username, peerKind,
+		channelType, channelInstance, senderID, userID, displayName, username, peerKind, tenantID,
 	)
 	return err
 }
 
-func contactWhereClause(opts store.ContactListOpts) (string, []any, int) {
+func contactWhereClause(ctx context.Context, opts store.ContactListOpts) (string, []any, int) {
 	var conditions []string
 	var args []any
 	argIdx := 1
+
+	if !store.IsCrossTenant(ctx) {
+		tenantID := store.TenantIDFromContext(ctx)
+		if tenantID != uuid.Nil {
+			conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIdx))
+			args = append(args, tenantID)
+			argIdx++
+		}
+	}
 
 	if opts.ChannelType != "" {
 		conditions = append(conditions, fmt.Sprintf("channel_type = $%d", argIdx))
@@ -71,7 +85,7 @@ func contactWhereClause(opts store.ContactListOpts) (string, []any, int) {
 }
 
 func (s *PGContactStore) ListContacts(ctx context.Context, opts store.ContactListOpts) ([]store.ChannelContact, error) {
-	where, args, argIdx := contactWhereClause(opts)
+	where, args, argIdx := contactWhereClause(ctx, opts)
 
 	query := `SELECT id, channel_type, channel_instance, sender_id, user_id,
 		display_name, username, avatar_url, peer_kind, merged_id,
@@ -113,7 +127,7 @@ func (s *PGContactStore) ListContacts(ctx context.Context, opts store.ContactLis
 }
 
 func (s *PGContactStore) CountContacts(ctx context.Context, opts store.ContactListOpts) (int, error) {
-	where, args, _ := contactWhereClause(opts)
+	where, args, _ := contactWhereClause(ctx, opts)
 	var count int
 	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM channel_contacts"+where, args...).Scan(&count)
 	return count, err

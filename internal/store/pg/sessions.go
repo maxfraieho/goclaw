@@ -1,6 +1,7 @@
 package pg
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"log/slog"
@@ -58,7 +59,7 @@ func (s *PGSessionStore) migrateLegacyWSKeys() {
 	}
 }
 
-func (s *PGSessionStore) GetOrCreate(key string) *store.SessionData {
+func (s *PGSessionStore) GetOrCreate(ctx context.Context, key string) *store.SessionData {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -93,9 +94,9 @@ func (s *PGSessionStore) GetOrCreate(key string) *store.SessionData {
 
 	msgsJSON, _ := json.Marshal([]providers.Message{})
 	s.db.Exec(
-		`INSERT INTO sessions (id, session_key, messages, created_at, updated_at, team_id)
-		 VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (session_key) DO NOTHING`,
-		uuid.Must(uuid.NewV7()), key, msgsJSON, now, now, teamID,
+		`INSERT INTO sessions (id, session_key, messages, created_at, updated_at, team_id, tenant_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (session_key) DO NOTHING`,
+		uuid.Must(uuid.NewV7()), key, msgsJSON, now, now, teamID, tenantIDForInsert(ctx),
 	)
 
 	return data
@@ -105,7 +106,7 @@ func (s *PGSessionStore) AddMessage(key string, msg providers.Message) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	data := s.getOrInit(key)
+	data := s.getOrInit(context.Background(), key)
 	data.Messages = append(data.Messages, msg)
 	data.Updated = time.Now()
 }
@@ -191,7 +192,7 @@ func (s *PGSessionStore) GetSessionMetadata(key string) map[string]string {
 func (s *PGSessionStore) SetSessionMetadata(key string, metadata map[string]string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	data := s.getOrInit(key)
+	data := s.getOrInit(context.Background(), key)
 	if data.Metadata == nil {
 		data.Metadata = make(map[string]string)
 	}
@@ -202,7 +203,7 @@ func (s *PGSessionStore) SetSessionMetadata(key string, metadata map[string]stri
 func (s *PGSessionStore) SetAgentInfo(key string, agentUUID uuid.UUID, userID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	data := s.getOrInit(key)
+	data := s.getOrInit(context.Background(), key)
 	if agentUUID != uuid.Nil {
 		data.AgentUUID = agentUUID
 	}

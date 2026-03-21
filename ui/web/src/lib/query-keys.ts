@@ -21,10 +21,6 @@ export const queryKeys = {
     all: ["traces"] as const,
     list: (params: Record<string, unknown>) => ["traces", params] as const,
   },
-  customTools: {
-    all: ["customTools"] as const,
-    list: (params: Record<string, unknown>) => ["customTools", params] as const,
-  },
   cliCredentials: {
     all: ["cliCredentials"] as const,
   },

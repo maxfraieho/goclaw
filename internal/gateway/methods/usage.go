@@ -37,7 +37,7 @@ func (m *UsageMethods) Register(router *gateway.MethodRouter) {
 	router.Register(protocol.MethodUsageSummary, m.handleSummary)
 }
 
-func (m *UsageMethods) handleGet(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+func (m *UsageMethods) handleGet(ctx context.Context, client *gateway.Client, req *protocol.RequestFrame) {
 	var params struct {
 		AgentID string `json:"agentId"`
 		Limit   int    `json:"limit"`
@@ -55,7 +55,7 @@ func (m *UsageMethods) handleGet(_ context.Context, client *gateway.Client, req 
 	records := make([]UsageRecord, 0, len(sessions))
 	for _, s := range sessions {
 		// Get full session data for token info
-		data := m.sessions.GetOrCreate(s.Key)
+		data := m.sessions.GetOrCreate(ctx, s.Key)
 		if data.InputTokens == 0 && data.OutputTokens == 0 {
 			continue
 		}
@@ -95,7 +95,7 @@ func (m *UsageMethods) handleGet(_ context.Context, client *gateway.Client, req 
 	}))
 }
 
-func (m *UsageMethods) handleSummary(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+func (m *UsageMethods) handleSummary(ctx context.Context, client *gateway.Client, req *protocol.RequestFrame) {
 	sessions := m.sessions.List("") // all agents
 
 	type agentSummary struct {
@@ -109,7 +109,7 @@ func (m *UsageMethods) handleSummary(_ context.Context, client *gateway.Client, 
 	var totalRecords int
 
 	for _, s := range sessions {
-		data := m.sessions.GetOrCreate(s.Key)
+		data := m.sessions.GetOrCreate(ctx, s.Key)
 		if data.InputTokens == 0 && data.OutputTokens == 0 {
 			continue
 		}

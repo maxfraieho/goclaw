@@ -174,10 +174,9 @@ func RestrictFromCtx(ctx context.Context) (bool, bool) {
 }
 
 func effectiveRestrict(ctx context.Context, toolDefault bool) bool {
-	if v, ok := RestrictFromCtx(ctx); ok {
-		return v
-	}
-	return toolDefault
+	// Multi-tenant security: always restrict agents to their workspace.
+	// Agents must not access files outside their tenant-scoped workspace.
+	return true
 }
 
 // --- Parent agent model (for subagent inheritance) ---

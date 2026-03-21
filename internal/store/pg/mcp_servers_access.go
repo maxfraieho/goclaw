@@ -23,29 +23,39 @@ func (s *PGMCPServerStore) GrantToAgent(ctx context.Context, g *store.MCPAgentGr
 	}
 	g.CreatedAt = time.Now()
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO mcp_agent_grants (id, server_id, agent_id, enabled, tool_allow, tool_deny, config_overrides, granted_by, created_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		`INSERT INTO mcp_agent_grants (id, server_id, agent_id, enabled, tool_allow, tool_deny, config_overrides, granted_by, created_at, tenant_id)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 		 ON CONFLICT (server_id, agent_id) DO UPDATE SET
 		   enabled = EXCLUDED.enabled, tool_allow = EXCLUDED.tool_allow,
 		   tool_deny = EXCLUDED.tool_deny, config_overrides = EXCLUDED.config_overrides,
 		   granted_by = EXCLUDED.granted_by`,
 		g.ID, g.ServerID, g.AgentID, g.Enabled,
 		jsonOrNull(g.ToolAllow), jsonOrNull(g.ToolDeny), jsonOrNull(g.ConfigOverrides),
-		g.GrantedBy, g.CreatedAt,
+		g.GrantedBy, g.CreatedAt, tenantIDForInsert(ctx),
 	)
 	return err
 }
 
 func (s *PGMCPServerStore) RevokeFromAgent(ctx context.Context, serverID, agentID uuid.UUID) error {
-	_, err := s.db.ExecContext(ctx,
-		"DELETE FROM mcp_agent_grants WHERE server_id = $1 AND agent_id = $2", serverID, agentID)
+	tClause, tArgs, err := tenantClauseN(ctx, 3)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx,
+		"DELETE FROM mcp_agent_grants WHERE server_id = $1 AND agent_id = $2"+tClause,
+		append([]any{serverID, agentID}, tArgs...)...)
 	return err
 }
 
 func (s *PGMCPServerStore) ListAgentGrants(ctx context.Context, agentID uuid.UUID) ([]store.MCPAgentGrant, error) {
+	tClause, tArgs, err := tenantClauseN(ctx, 2)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, server_id, agent_id, enabled, tool_allow, tool_deny, config_overrides, granted_by, created_at
-		 FROM mcp_agent_grants WHERE agent_id = $1`, agentID)
+		 FROM mcp_agent_grants WHERE agent_id = $1`+tClause,
+		append([]any{agentID}, tArgs...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -64,11 +74,16 @@ func (s *PGMCPServerStore) ListAgentGrants(ctx context.Context, agentID uuid.UUI
 }
 
 func (s *PGMCPServerStore) ListServerGrants(ctx context.Context, serverID uuid.UUID) ([]store.MCPAgentGrant, error) {
+	tClause, tArgs, err := tenantClauseN(ctx, 2)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, server_id, agent_id, enabled,
 		 COALESCE(tool_allow, '[]'::jsonb), COALESCE(tool_deny, '[]'::jsonb),
 		 COALESCE(config_overrides, '{}'::jsonb), granted_by, created_at
-		 FROM mcp_agent_grants WHERE server_id = $1 ORDER BY created_at`, serverID)
+		 FROM mcp_agent_grants WHERE server_id = $1`+tClause+` ORDER BY created_at`,
+		append([]any{serverID}, tArgs...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -122,21 +137,26 @@ func (s *PGMCPServerStore) GrantToUser(ctx context.Context, g *store.MCPUserGran
 	}
 	g.CreatedAt = time.Now()
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO mcp_user_grants (id, server_id, user_id, enabled, tool_allow, tool_deny, granted_by, created_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+		`INSERT INTO mcp_user_grants (id, server_id, user_id, enabled, tool_allow, tool_deny, granted_by, created_at, tenant_id)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 		 ON CONFLICT (server_id, user_id) DO UPDATE SET
 		   enabled = EXCLUDED.enabled, tool_allow = EXCLUDED.tool_allow,
 		   tool_deny = EXCLUDED.tool_deny, granted_by = EXCLUDED.granted_by`,
 		g.ID, g.ServerID, g.UserID, g.Enabled,
 		jsonOrNull(g.ToolAllow), jsonOrNull(g.ToolDeny),
-		g.GrantedBy, g.CreatedAt,
+		g.GrantedBy, g.CreatedAt, tenantIDForInsert(ctx),
 	)
 	return err
 }
 
 func (s *PGMCPServerStore) RevokeFromUser(ctx context.Context, serverID uuid.UUID, userID string) error {
-	_, err := s.db.ExecContext(ctx,
-		"DELETE FROM mcp_user_grants WHERE server_id = $1 AND user_id = $2", serverID, userID)
+	tClause, tArgs, err := tenantClauseN(ctx, 3)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx,
+		"DELETE FROM mcp_user_grants WHERE server_id = $1 AND user_id = $2"+tClause,
+		append([]any{serverID, userID}, tArgs...)...)
 	return err
 }
 
@@ -213,20 +233,25 @@ func (s *PGMCPServerStore) CreateRequest(ctx context.Context, req *store.MCPAcce
 	req.Status = "pending"
 	req.CreatedAt = time.Now()
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO mcp_access_requests (id, server_id, agent_id, user_id, scope, status, reason, tool_allow, requested_by, created_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		`INSERT INTO mcp_access_requests (id, server_id, agent_id, user_id, scope, status, reason, tool_allow, requested_by, created_at, tenant_id)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
 		req.ID, req.ServerID, nilUUID(req.AgentID), nilStr(req.UserID),
 		req.Scope, req.Status, nilStr(req.Reason),
-		jsonOrNull(req.ToolAllow), req.RequestedBy, req.CreatedAt,
+		jsonOrNull(req.ToolAllow), req.RequestedBy, req.CreatedAt, tenantIDForInsert(ctx),
 	)
 	return err
 }
 
 func (s *PGMCPServerStore) ListPendingRequests(ctx context.Context) ([]store.MCPAccessRequest, error) {
+	tClause, tArgs, err := tenantClauseN(ctx, 1)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, server_id, agent_id, user_id, scope, status, reason, tool_allow, requested_by,
 		 reviewed_by, reviewed_at, review_note, created_at
-		 FROM mcp_access_requests WHERE status = 'pending' ORDER BY created_at`)
+		 FROM mcp_access_requests WHERE status = 'pending'`+tClause+` ORDER BY created_at`,
+		tArgs...)
 	if err != nil {
 		return nil, err
 	}

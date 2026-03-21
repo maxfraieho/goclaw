@@ -51,9 +51,6 @@ const LogsPage = lazyWithRetry(() =>
 const ProvidersPage = lazyWithRetry(() =>
   import("@/pages/providers/providers-page").then((m) => ({ default: m.ProvidersPage })),
 );
-const CustomToolsPage = lazyWithRetry(() =>
-  import("@/pages/custom-tools/custom-tools-page").then((m) => ({ default: m.CustomToolsPage })),
-);
 const MCPPage = lazyWithRetry(() =>
   import("@/pages/mcp/mcp-page").then((m) => ({ default: m.MCPPage })),
 );
@@ -158,7 +155,6 @@ export function AppRoutes() {
           <Route path={ROUTES.CHANNEL_DETAIL} element={<RequireAdmin><ChannelsPage key="detail" /></RequireAdmin>} />
           <Route path={ROUTES.NODES} element={<RequireAdmin><NodesPage /></RequireAdmin>} />
           <Route path={ROUTES.LOGS} element={<RequireAdmin><LogsPage /></RequireAdmin>} />
-          <Route path={ROUTES.CUSTOM_TOOLS} element={<RequireAdmin><CustomToolsPage /></RequireAdmin>} />
           <Route path={ROUTES.BUILTIN_TOOLS} element={<RequireAdmin><BuiltinToolsPage /></RequireAdmin>} />
           <Route path={ROUTES.MCP} element={<RequireAdmin><MCPPage /></RequireAdmin>} />
           <Route path={ROUTES.TTS} element={<RequireAdmin><TtsPage /></RequireAdmin>} />

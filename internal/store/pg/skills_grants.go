@@ -2,6 +2,7 @@ package pg
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -112,18 +113,30 @@ func (s *PGSkillStore) RevokeFromUser(ctx context.Context, skillID uuid.UUID, us
 
 // ListAccessible returns skills accessible to a given agent+user combination.
 // Access logic: public → all, private → owner only, internal → check grants.
+// System skills (is_system=true) are always visible regardless of tenant.
 func (s *PGSkillStore) ListAccessible(ctx context.Context, agentID uuid.UUID, userID string) ([]store.SkillInfo, error) {
+	// tenant filter: system skills bypass it, tenant-owned skills are filtered
+	tc, tcArgs, err := tenantClauseN(ctx, 3)
+	if err != nil {
+		return nil, err
+	}
+	tenantCond := ""
+	if tc != "" {
+		// tc is " AND tenant_id = $3"; we need it as an OR condition inside the WHERE
+		tenantCond = fmt.Sprintf(" AND (s.is_system = true OR s.tenant_id = $%d)", 3)
+		_ = tc // tcArgs carries the value
+	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT DISTINCT s.name, s.slug, s.description, s.version, s.file_path FROM skills s
 		LEFT JOIN skill_agent_grants sag ON s.id = sag.skill_id AND sag.agent_id = $1
 		LEFT JOIN skill_user_grants sug ON s.id = sug.skill_id AND sug.user_id = $2
-		WHERE s.status = 'active' AND (
+		WHERE s.status = 'active'`+tenantCond+` AND (
 			s.is_system = true
 			OR s.visibility = 'public'
 			OR (s.visibility = 'private' AND s.owner_id = $2)
 			OR (s.visibility = 'internal' AND (sag.id IS NOT NULL OR sug.id IS NOT NULL))
 		)
-		ORDER BY s.name`, agentID, userID)
+		ORDER BY s.name`, append([]any{agentID, userID}, tcArgs...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -166,6 +179,14 @@ type SkillWithGrantStatus struct {
 
 // ListWithGrantStatus returns all active skills with grant status for a specific agent.
 func (s *PGSkillStore) ListWithGrantStatus(ctx context.Context, agentID uuid.UUID) ([]SkillWithGrantStatus, error) {
+	tc, tcArgs, err := tenantClauseN(ctx, 2)
+	if err != nil {
+		return nil, err
+	}
+	tenantCond := ""
+	if tc != "" {
+		tenantCond = fmt.Sprintf(" AND (s.is_system = true OR s.tenant_id = $%d)", 2)
+	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT s.id, s.name, s.slug, COALESCE(s.description, ''), s.visibility, s.version,
 		        (sag.id IS NOT NULL) AS granted,
@@ -173,8 +194,8 @@ func (s *PGSkillStore) ListWithGrantStatus(ctx context.Context, agentID uuid.UUI
 		        s.is_system
 		 FROM skills s
 		 LEFT JOIN skill_agent_grants sag ON s.id = sag.skill_id AND sag.agent_id = $1
-		 WHERE s.status = 'active'
-		 ORDER BY s.name`, agentID)
+		 WHERE s.status = 'active'`+tenantCond+`
+		 ORDER BY s.name`, append([]any{agentID}, tcArgs...)...)
 	if err != nil {
 		return nil, err
 	}
