@@ -633,6 +633,19 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 			toolDefs = l.tools.ProviderDefs()
 		}
 
+		// Per-tenant tool exclusions: remove tools disabled for this agent's tenant.
+		if len(l.disabledTools) > 0 {
+			filtered := toolDefs[:0]
+			for _, td := range toolDefs {
+				if !l.disabledTools[td.Function.Name] {
+					filtered = append(filtered, td)
+				} else {
+					delete(allowedTools, td.Function.Name)
+				}
+			}
+			toolDefs = filtered
+		}
+
 		// Bootstrap mode: restrict API tool definitions to write_file only (open agents).
 		// Predefined agents keep all tools — BOOTSTRAP.md guides behavior.
 		if hadBootstrap && l.agentType != store.AgentTypePredefined {

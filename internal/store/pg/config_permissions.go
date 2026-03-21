@@ -66,7 +66,11 @@ func (s *PGConfigPermissionStore) InvalidateCache() {
 
 // CheckPermission evaluates deny-first, allow-second permission with Go-level wildcard matching.
 func (s *PGConfigPermissionStore) CheckPermission(ctx context.Context, agentID uuid.UUID, scope, configType, userID string) (bool, error) {
-	cacheKey := agentID.String() + ":" + userID
+	tid := store.TenantIDFromContext(ctx)
+	if tid == uuid.Nil {
+		tid = store.MasterTenantID
+	}
+	cacheKey := tid.String() + ":" + agentID.String() + ":" + userID
 
 	// Check cache.
 	s.mu.RLock()
@@ -216,7 +220,11 @@ func (s *PGConfigPermissionStore) List(ctx context.Context, agentID uuid.UUID, c
 // ListFileWriters returns cached file_writer allow permissions for a given agentID+scope.
 // Hot-path: called during system prompt injection for every group message.
 func (s *PGConfigPermissionStore) ListFileWriters(ctx context.Context, agentID uuid.UUID, scope string) ([]store.ConfigPermission, error) {
-	cacheKey := agentID.String() + ":" + scope
+	tid := store.TenantIDFromContext(ctx)
+	if tid == uuid.Nil {
+		tid = store.MasterTenantID
+	}
+	cacheKey := tid.String() + ":" + agentID.String() + ":" + scope
 
 	s.fwMu.RLock()
 	if entry, ok := s.fwCache[cacheKey]; ok && time.Since(entry.fetched) < permCacheTTL {

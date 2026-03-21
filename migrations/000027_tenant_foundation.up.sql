@@ -88,6 +88,10 @@ ALTER TABLE paired_devices ADD COLUMN tenant_id UUID NOT NULL DEFAULT '0193a5b0-
 ALTER TABLE channel_pending_messages ADD COLUMN tenant_id UUID NOT NULL DEFAULT '0193a5b0-7000-7000-8000-000000000001' REFERENCES tenants(id);
 ALTER TABLE channel_contacts ADD COLUMN tenant_id UUID NOT NULL DEFAULT '0193a5b0-7000-7000-8000-000000000001' REFERENCES tenants(id);
 
+-- LLM Providers + Config Secrets
+ALTER TABLE llm_providers ADD COLUMN tenant_id UUID NOT NULL DEFAULT '0193a5b0-7000-7000-8000-000000000001' REFERENCES tenants(id);
+ALTER TABLE config_secrets ADD COLUMN tenant_id UUID NOT NULL DEFAULT '0193a5b0-7000-7000-8000-000000000001' REFERENCES tenants(id);
+
 -- Other
 ALTER TABLE secure_cli_binaries ADD COLUMN tenant_id UUID NOT NULL DEFAULT '0193a5b0-7000-7000-8000-000000000001' REFERENCES tenants(id);
 
@@ -124,6 +128,8 @@ ALTER TABLE pairing_requests ALTER COLUMN tenant_id DROP DEFAULT;
 ALTER TABLE paired_devices ALTER COLUMN tenant_id DROP DEFAULT;
 ALTER TABLE channel_pending_messages ALTER COLUMN tenant_id DROP DEFAULT;
 ALTER TABLE channel_contacts ALTER COLUMN tenant_id DROP DEFAULT;
+ALTER TABLE llm_providers ALTER COLUMN tenant_id DROP DEFAULT;
+ALTER TABLE config_secrets ALTER COLUMN tenant_id DROP DEFAULT;
 ALTER TABLE secure_cli_binaries ALTER COLUMN tenant_id DROP DEFAULT;
 
 -- ============================================================
@@ -160,6 +166,8 @@ CREATE INDEX idx_pairing_requests_tenant ON pairing_requests(tenant_id);
 CREATE INDEX idx_paired_devices_tenant ON paired_devices(tenant_id);
 CREATE INDEX idx_channel_pending_messages_tenant ON channel_pending_messages(tenant_id);
 CREATE INDEX idx_channel_contacts_tenant ON channel_contacts(tenant_id);
+CREATE INDEX idx_llm_providers_tenant ON llm_providers(tenant_id);
+CREATE INDEX idx_config_secrets_tenant ON config_secrets(tenant_id);
 CREATE INDEX idx_secure_cli_binaries_tenant ON secure_cli_binaries(tenant_id);
 
 -- Composite indexes for Plan 3 query performance
@@ -242,6 +250,25 @@ CREATE UNIQUE INDEX idx_mcp_servers_tenant_name ON mcp_servers(tenant_id, name);
 ALTER TABLE channel_contacts DROP CONSTRAINT IF EXISTS channel_contacts_channel_type_sender_id_key;
 DROP INDEX IF EXISTS channel_contacts_channel_type_sender_id_key;
 CREATE UNIQUE INDEX idx_channel_contacts_tenant_type_sender ON channel_contacts(tenant_id, channel_type, sender_id);
+
+-- llm_providers.name: globally unique → (tenant_id, name)
+ALTER TABLE llm_providers DROP CONSTRAINT IF EXISTS llm_providers_name_key;
+DROP INDEX IF EXISTS llm_providers_name_key;
+CREATE UNIQUE INDEX idx_llm_providers_tenant_name ON llm_providers(tenant_id, name);
+
+-- config_secrets.key: PK (key) → PK (key, tenant_id)
+ALTER TABLE config_secrets DROP CONSTRAINT IF EXISTS config_secrets_pkey;
+ALTER TABLE config_secrets ADD PRIMARY KEY (key, tenant_id);
+
+-- paired_devices: UNIQUE (sender_id, channel) → (tenant_id, sender_id, channel)
+ALTER TABLE paired_devices DROP CONSTRAINT IF EXISTS paired_devices_sender_id_channel_key;
+DROP INDEX IF EXISTS paired_devices_sender_id_channel_key;
+CREATE UNIQUE INDEX idx_paired_devices_tenant_sender_channel ON paired_devices(tenant_id, sender_id, channel);
+
+-- channel_instances.name: globally unique → (tenant_id, name)
+ALTER TABLE channel_instances DROP CONSTRAINT IF EXISTS channel_instances_name_key;
+DROP INDEX IF EXISTS channel_instances_name_key;
+CREATE UNIQUE INDEX idx_channel_instances_tenant_name ON channel_instances(tenant_id, name);
 
 -- usage_snapshots: add tenant_id to unique conflict index for per-tenant aggregation
 DROP INDEX IF EXISTS idx_usage_snapshots_unique;

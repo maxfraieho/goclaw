@@ -65,7 +65,7 @@ func wireHTTP(stores *store.Stores, token, defaultWorkspace string, msgBus *bus.
 	}
 
 	if stores != nil && stores.BuiltinTools != nil {
-		builtinToolsH = httpapi.NewBuiltinToolsHandler(stores.BuiltinTools, token, msgBus)
+		builtinToolsH = httpapi.NewBuiltinToolsHandler(stores.BuiltinTools, stores.BuiltinToolTenantCfgs, token, msgBus)
 	}
 
 	if stores != nil && stores.PendingMessages != nil {

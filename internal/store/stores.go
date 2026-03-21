@@ -27,6 +27,8 @@ type Stores struct {
 	SecureCLI        SecureCLIStore
 	APIKeys           APIKeyStore
 	Heartbeats        HeartbeatStore
-	ConfigPermissions ConfigPermissionStore
-	Tenants           TenantStore
+	ConfigPermissions      ConfigPermissionStore
+	Tenants                TenantStore
+	BuiltinToolTenantCfgs  BuiltinToolTenantConfigStore
+	SkillTenantCfgs        SkillTenantConfigStore
 }

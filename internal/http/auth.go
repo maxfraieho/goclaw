@@ -142,7 +142,7 @@ func resolveAuthBearer(r *http.Request, gatewayToken, bearer string) authResult 
 	}
 	// Browser pairing → operator (via X-GoClaw-Sender-Id header)
 	if senderID := r.Header.Get("X-GoClaw-Sender-Id"); senderID != "" && pkgPairingStore != nil {
-		paired, err := pkgPairingStore.IsPaired(senderID, "browser")
+		paired, err := pkgPairingStore.IsPaired(r.Context(), senderID, "browser")
 		if err == nil && paired {
 			return authResult{Role: permissions.RoleOperator, Authenticated: true, TenantID: store.MasterTenantID}
 		}

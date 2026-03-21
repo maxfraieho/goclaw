@@ -59,17 +59,27 @@ func (s *PGSessionStore) migrateLegacyWSKeys() {
 	}
 }
 
+// sessionCacheKey prefixes session key with tenant UUID to prevent cross-tenant cache collisions.
+// Two tenants with the same agent_key produce different cache keys.
+func sessionCacheKey(ctx context.Context, key string) string {
+	tid := store.TenantIDFromContext(ctx)
+	if tid == uuid.Nil {
+		tid = store.MasterTenantID
+	}
+	return tid.String() + ":" + key
+}
+
 func (s *PGSessionStore) GetOrCreate(ctx context.Context, key string) *store.SessionData {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if cached, ok := s.cache[key]; ok {
+	if cached, ok := s.cache[sessionCacheKey(ctx, key)]; ok {
 		return cached
 	}
 
-	data := s.loadFromDB(key)
+	data := s.loadFromDB(ctx, key)
 	if data != nil {
-		s.cache[key] = data
+		s.cache[sessionCacheKey(ctx, key)] = data
 		return data
 	}
 
@@ -90,7 +100,7 @@ func (s *PGSessionStore) GetOrCreate(ctx context.Context, key string) *store.Ses
 			data.TeamID = teamID
 		}
 	}
-	s.cache[key] = data
+	s.cache[sessionCacheKey(ctx, key)] = data
 
 	msgsJSON, _ := json.Marshal([]providers.Message{})
 	s.db.Exec(
@@ -111,9 +121,9 @@ func (s *PGSessionStore) AddMessage(ctx context.Context, key string, msg provide
 	data.Updated = time.Now()
 }
 
-func (s *PGSessionStore) GetHistory(_ context.Context, key string) []providers.Message {
+func (s *PGSessionStore) GetHistory(ctx context.Context, key string) []providers.Message {
 	s.mu.RLock()
-	if data, ok := s.cache[key]; ok {
+	if data, ok := s.cache[sessionCacheKey(ctx, key)]; ok {
 		msgs := make([]providers.Message, len(data.Messages))
 		copy(msgs, data.Messages)
 		s.mu.RUnlock()
@@ -126,62 +136,62 @@ func (s *PGSessionStore) GetHistory(_ context.Context, key string) []providers.M
 	defer s.mu.Unlock()
 
 	// Double-check after acquiring write lock
-	if data, ok := s.cache[key]; ok {
+	if data, ok := s.cache[sessionCacheKey(ctx, key)]; ok {
 		msgs := make([]providers.Message, len(data.Messages))
 		copy(msgs, data.Messages)
 		return msgs
 	}
 
-	data := s.loadFromDB(key)
+	data := s.loadFromDB(ctx, key)
 	if data == nil {
 		return nil
 	}
-	s.cache[key] = data
+	s.cache[sessionCacheKey(ctx, key)] = data
 	msgs := make([]providers.Message, len(data.Messages))
 	copy(msgs, data.Messages)
 	return msgs
 }
 
-func (s *PGSessionStore) GetSummary(_ context.Context, key string) string {
+func (s *PGSessionStore) GetSummary(ctx context.Context, key string) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if data, ok := s.cache[key]; ok {
+	if data, ok := s.cache[sessionCacheKey(ctx, key)]; ok {
 		return data.Summary
 	}
 	return ""
 }
 
-func (s *PGSessionStore) SetSummary(_ context.Context, key, summary string) {
+func (s *PGSessionStore) SetSummary(ctx context.Context, key, summary string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if data, ok := s.cache[key]; ok {
+	if data, ok := s.cache[sessionCacheKey(ctx, key)]; ok {
 		data.Summary = summary
 		data.Updated = time.Now()
 	}
 }
 
-func (s *PGSessionStore) GetLabel(_ context.Context, key string) string {
+func (s *PGSessionStore) GetLabel(ctx context.Context, key string) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if data, ok := s.cache[key]; ok {
+	if data, ok := s.cache[sessionCacheKey(ctx, key)]; ok {
 		return data.Label
 	}
 	return ""
 }
 
-func (s *PGSessionStore) SetLabel(_ context.Context, key, label string) {
+func (s *PGSessionStore) SetLabel(ctx context.Context, key, label string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if data, ok := s.cache[key]; ok {
+	if data, ok := s.cache[sessionCacheKey(ctx, key)]; ok {
 		data.Label = label
 		data.Updated = time.Now()
 	}
 }
 
-func (s *PGSessionStore) GetSessionMetadata(_ context.Context, key string) map[string]string {
+func (s *PGSessionStore) GetSessionMetadata(ctx context.Context, key string) map[string]string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if data, ok := s.cache[key]; ok && data.Metadata != nil {
+	if data, ok := s.cache[sessionCacheKey(ctx, key)]; ok && data.Metadata != nil {
 		out := make(map[string]string, len(data.Metadata))
 		maps.Copy(out, data.Metadata)
 		return out
@@ -212,10 +222,10 @@ func (s *PGSessionStore) SetAgentInfo(ctx context.Context, key string, agentUUID
 	}
 }
 
-func (s *PGSessionStore) UpdateMetadata(_ context.Context, key, model, provider, channel string) {
+func (s *PGSessionStore) UpdateMetadata(ctx context.Context, key, model, provider, channel string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if data, ok := s.cache[key]; ok {
+	if data, ok := s.cache[sessionCacheKey(ctx, key)]; ok {
 		if model != "" {
 			data.Model = model
 		}

@@ -108,6 +108,9 @@ type Loop struct {
 	// Global builtin tool settings (from builtin_tools table)
 	builtinToolSettings tools.BuiltinToolSettings
 
+	// Per-tenant disabled tools (tool name → true means excluded from LLM)
+	disabledTools map[string]bool
+
 	// Thinking level for extended thinking support
 	thinkingLevel string
 
@@ -232,6 +235,9 @@ type LoopConfig struct {
 	// Global builtin tool settings (from builtin_tools table)
 	BuiltinToolSettings tools.BuiltinToolSettings
 
+	// Per-tenant disabled tools (tool name → true means excluded)
+	DisabledTools map[string]bool
+
 	// Thinking level: "off", "low", "medium", "high" (from agent other_config)
 	ThinkingLevel string
 
@@ -340,6 +346,7 @@ func NewLoop(cfg LoopConfig) *Loop {
 		injectionAction:        action,
 		maxMessageChars:        cfg.MaxMessageChars,
 		builtinToolSettings:    cfg.BuiltinToolSettings,
+		disabledTools:          cfg.DisabledTools,
 		thinkingLevel:          cfg.ThinkingLevel,
 		selfEvolve:             cfg.SelfEvolve,
 		skillEvolve:            cfg.SkillEvolve,

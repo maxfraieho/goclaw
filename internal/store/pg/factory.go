@@ -45,7 +45,9 @@ func NewPGStores(cfg store.StoreConfig) (*store.Stores, error) {
 		SecureCLI:        NewPGSecureCLIStore(db, cfg.EncryptionKey),
 		APIKeys:           NewPGAPIKeyStore(db),
 		Heartbeats:        NewPGHeartbeatStore(db),
-		ConfigPermissions: NewPGConfigPermissionStore(db),
-		Tenants:           NewPGTenantStore(db),
+		ConfigPermissions:     NewPGConfigPermissionStore(db),
+		Tenants:               NewPGTenantStore(db),
+		BuiltinToolTenantCfgs: NewPGBuiltinToolTenantConfigStore(db),
+		SkillTenantCfgs:       NewPGSkillTenantConfigStore(db),
 	}, nil
 }

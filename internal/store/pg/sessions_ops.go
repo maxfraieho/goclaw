@@ -7,10 +7,10 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 )
 
-func (s *PGSessionStore) TruncateHistory(_ context.Context, key string, keepLast int) {
+func (s *PGSessionStore) TruncateHistory(ctx context.Context, key string, keepLast int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if data, ok := s.cache[key]; ok {
+	if data, ok := s.cache[sessionCacheKey(ctx, key)]; ok {
 		if keepLast <= 0 {
 			data.Messages = []providers.Message{}
 		} else if len(data.Messages) > keepLast {
@@ -20,28 +20,28 @@ func (s *PGSessionStore) TruncateHistory(_ context.Context, key string, keepLast
 	}
 }
 
-func (s *PGSessionStore) SetHistory(_ context.Context, key string, msgs []providers.Message) {
+func (s *PGSessionStore) SetHistory(ctx context.Context, key string, msgs []providers.Message) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if data, ok := s.cache[key]; ok {
+	if data, ok := s.cache[sessionCacheKey(ctx, key)]; ok {
 		data.Messages = msgs
 		data.Updated = time.Now()
 	}
 }
 
-func (s *PGSessionStore) Reset(_ context.Context, key string) {
+func (s *PGSessionStore) Reset(ctx context.Context, key string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if data, ok := s.cache[key]; ok {
+	if data, ok := s.cache[sessionCacheKey(ctx, key)]; ok {
 		data.Messages = []providers.Message{}
 		data.Summary = ""
 		data.Updated = time.Now()
 	}
 }
 
-func (s *PGSessionStore) Delete(_ context.Context, key string) error {
+func (s *PGSessionStore) Delete(ctx context.Context, key string) error {
 	s.mu.Lock()
-	delete(s.cache, key)
+	delete(s.cache, sessionCacheKey(ctx, key))
 	s.mu.Unlock()
 
 	// Clean up associated media files before deleting from DB.
@@ -49,6 +49,7 @@ func (s *PGSessionStore) Delete(_ context.Context, key string) error {
 		s.OnDelete(key)
 	}
 
-	_, err := s.db.Exec("DELETE FROM sessions WHERE session_key = $1", key)
+	tid := tenantIDForInsert(ctx)
+	_, err := s.db.ExecContext(ctx, "DELETE FROM sessions WHERE session_key = $1 AND tenant_id = $2", key, tid)
 	return err
 }

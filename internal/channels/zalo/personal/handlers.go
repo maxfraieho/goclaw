@@ -32,6 +32,7 @@ func (c *Channel) handleMessage(msg protocol.Message) {
 }
 
 func (c *Channel) handleDM(msg protocol.UserMessage) {
+	ctx := context.Background()
 	senderID := msg.Data.UIDFrom
 	threadID := msg.ThreadID()
 
@@ -40,7 +41,7 @@ func (c *Channel) handleDM(msg protocol.UserMessage) {
 		return
 	}
 
-	if !c.checkDMPolicy(senderID, threadID) {
+	if !c.checkDMPolicy(ctx, senderID, threadID) {
 		return
 	}
 
@@ -72,6 +73,7 @@ func (c *Channel) handleDM(msg protocol.UserMessage) {
 }
 
 func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
+	ctx := context.Background()
 	senderID := msg.Data.UIDFrom
 	threadID := msg.ThreadID()
 
@@ -81,7 +83,7 @@ func (c *Channel) handleGroupMessage(msg protocol.GroupMessage) {
 	}
 
 	// Step 1: enforce access policy (allowlist/pairing). Hard reject — don't record history.
-	if !c.checkGroupPolicy(senderID, threadID) {
+	if !c.checkGroupPolicy(ctx, senderID, threadID) {
 		return
 	}
 

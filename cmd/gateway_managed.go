@@ -157,6 +157,8 @@ func wireExtras(
 		TracingStore:           stores.Tracing,
 		MemoryStore:            stores.Memory,
 		TenantStore:            stores.Tenants,
+		BuiltinToolTenantCfgs:  stores.BuiltinToolTenantCfgs,
+		SkillTenantCfgs:        stores.SkillTenantCfgs,
 		Workspace:              workspace,
 		OnEvent: func(event agent.AgentEvent) {
 			msgBus.Broadcast(bus.Event{

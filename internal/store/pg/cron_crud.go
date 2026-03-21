@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -119,7 +120,12 @@ func (s *PGCronStore) ListJobs(ctx context.Context, includeDisabled bool, agentI
 		args = append(args, userID)
 		argIdx++
 	}
-	if clause, targs, err := tenantClauseN(ctx, argIdx); err == nil && clause != "" {
+	clause, targs, tErr := tenantClauseN(ctx, argIdx)
+	if tErr != nil {
+		slog.Warn("cron.ListJobs: tenant context missing, returning empty (fail-closed)", "error", tErr)
+		return nil
+	}
+	if clause != "" {
 		q += clause
 		args = append(args, targs...)
 		argIdx++

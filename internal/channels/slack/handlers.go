@@ -32,6 +32,7 @@ func (c *Channel) handleEventsAPI(evt socketmode.Event) {
 }
 
 func (c *Channel) handleMessage(ev *slackevents.MessageEvent) {
+	ctx := context.Background()
 	// For message_changed: extract user/text from the nested Message field.
 	// Only process if the edit introduces a new @bot mention.
 	if ev.SubType == "message_changed" {
@@ -89,11 +90,11 @@ func (c *Channel) handleMessage(ev *slackevents.MessageEvent) {
 
 	// Policy check
 	if isDM {
-		if !c.checkDMPolicy(senderID, channelID) {
+		if !c.checkDMPolicy(ctx, senderID, channelID) {
 			return
 		}
 	} else {
-		if !c.checkGroupPolicy(senderID, channelID) {
+		if !c.checkGroupPolicy(ctx, senderID, channelID) {
 			return
 		}
 	}

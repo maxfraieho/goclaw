@@ -90,6 +90,10 @@ type ResolverDeps struct {
 	// Tenant store for workspace path resolution
 	TenantStore store.TenantStore
 
+	// Per-tenant tool/skill config overrides
+	BuiltinToolTenantCfgs store.BuiltinToolTenantConfigStore
+	SkillTenantCfgs       store.SkillTenantConfigStore
+
 	// Global workspace root (GOCLAW_WORKSPACE)
 	Workspace string
 }
@@ -117,15 +121,15 @@ func NewManagedResolver(deps ResolverDeps) ResolverFunc {
 			return nil, fmt.Errorf("agent %s is inactive", agentKey)
 		}
 
-		// Resolve provider
-		provider, err := deps.ProviderReg.Get(ag.Provider)
+		// Resolve provider (tenant-aware: tries tenant-specific first, falls back to master)
+		provider, err := deps.ProviderReg.GetForTenant(ag.TenantID, ag.Provider)
 		if err != nil {
-			// Fallback to any available provider
-			names := deps.ProviderReg.List()
+			// Fallback to any available provider for this tenant
+			names := deps.ProviderReg.ListForTenant(ag.TenantID)
 			if len(names) == 0 {
 				return nil, fmt.Errorf("no providers configured for agent %s", agentKey)
 			}
-			provider, _ = deps.ProviderReg.Get(names[0])
+			provider, _ = deps.ProviderReg.GetForTenant(ag.TenantID, names[0])
 			slog.Warn("agent provider not found, using fallback",
 				"agent", agentKey, "wanted", ag.Provider, "using", names[0])
 			if tl := ag.ParseThinkingLevel(); tl != "" && tl != "off" {
@@ -297,6 +301,18 @@ func NewManagedResolver(deps ResolverDeps) ResolverFunc {
 			}
 		}
 
+		// Load per-tenant tool exclusions (disabled tools for this agent's tenant)
+		var disabledTools map[string]bool
+		if deps.BuiltinToolTenantCfgs != nil && ag.TenantID != uuid.Nil {
+			if disabled, err := deps.BuiltinToolTenantCfgs.ListDisabled(ctx, ag.TenantID); err == nil && len(disabled) > 0 {
+				disabledTools = make(map[string]bool, len(disabled))
+				for _, name := range disabled {
+					disabledTools[name] = true
+				}
+				slog.Debug("tenant tool exclusions", "agent", agentKey, "tenant", ag.TenantID, "disabled", len(disabled))
+			}
+		}
+
 		// Filter skills by visibility + agent grants.
 		// Only public skills and explicitly granted internal skills appear in the system prompt.
 		var skillAllowList []string
@@ -358,6 +374,7 @@ func NewManagedResolver(deps ResolverDeps) ResolverFunc {
 			SandboxContainerDir:    sandboxContainerDir,
 			SandboxWorkspaceAccess: sandboxWorkspaceAccess,
 			BuiltinToolSettings:    builtinSettings,
+			DisabledTools:          disabledTools,
 			ThinkingLevel:          ag.ParseThinkingLevel(),
 			SelfEvolve:             ag.ParseSelfEvolve(),
 			SkillEvolve:            ag.AgentType == store.AgentTypePredefined && ag.ParseSkillEvolve(),
@@ -403,7 +420,7 @@ func resolveTenantSlug(ts store.TenantStore, tenantID uuid.UUID) string {
 	if ts == nil {
 		return tenantID.String()
 	}
-	tenant, err := ts.GetTenant(context.Background(), tenantID)
+	tenant, err := ts.GetTenant(store.WithCrossTenant(context.Background()), tenantID)
 	if err != nil || tenant == nil {
 		return tenantID.String()
 	}

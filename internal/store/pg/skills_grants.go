@@ -126,11 +126,19 @@ func (s *PGSkillStore) ListAccessible(ctx context.Context, agentID uuid.UUID, us
 		tenantCond = fmt.Sprintf(" AND (s.is_system = true OR s.tenant_id = $%d)", 3)
 		_ = tc // tcArgs carries the value
 	}
+	// LEFT JOIN skill_tenant_configs to exclude per-tenant disabled skills.
+	// stc.enabled = false → skill explicitly disabled for this tenant.
+	stcJoin := ""
+	stcFilter := ""
+	if len(tcArgs) > 0 {
+		stcJoin = fmt.Sprintf(" LEFT JOIN skill_tenant_configs stc ON s.id = stc.skill_id AND stc.tenant_id = $%d", 3)
+		stcFilter = " AND (stc.enabled IS NULL OR stc.enabled = true)"
+	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT DISTINCT s.name, s.slug, s.description, s.version, s.file_path FROM skills s
 		LEFT JOIN skill_agent_grants sag ON s.id = sag.skill_id AND sag.agent_id = $1
-		LEFT JOIN skill_user_grants sug ON s.id = sug.skill_id AND sug.user_id = $2
-		WHERE s.status = 'active'`+tenantCond+` AND (
+		LEFT JOIN skill_user_grants sug ON s.id = sug.skill_id AND sug.user_id = $2`+stcJoin+`
+		WHERE s.status = 'active'`+tenantCond+stcFilter+` AND (
 			s.is_system = true
 			OR s.visibility = 'public'
 			OR (s.visibility = 'private' AND s.owner_id = $2)
