@@ -10,6 +10,7 @@ import { ROUTES, SUPPORTED_LANGUAGES, LANGUAGE_LABELS, TIMEZONE_OPTIONS, type La
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover } from "radix-ui";
 import { useState } from "react";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 
 export function Topbar() {
   const { t } = useTranslation("topbar");
@@ -113,6 +114,7 @@ function UserMenu() {
   const userId = useAuthStore((s) => s.userId);
   const { currentTenant, tenants, isCrossTenant, isMultiTenant, currentTenantId } = useTenants();
   const [open, setOpen] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const tenantLabel = isCrossTenant
     ? tt("allTenants")
@@ -125,6 +127,7 @@ function UserMenu() {
   };
 
   return (
+    <>
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
         <button
@@ -181,7 +184,7 @@ function UserMenu() {
 
           {/* Logout */}
           <button
-            onClick={() => { setOpen(false); logout(); }}
+            onClick={() => { setOpen(false); setShowLogoutConfirm(true); }}
             className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-destructive hover:bg-accent"
           >
             <LogOut className="h-3.5 w-3.5 shrink-0" />
@@ -190,5 +193,16 @@ function UserMenu() {
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
+
+    <ConfirmDialog
+      open={showLogoutConfirm}
+      onOpenChange={setShowLogoutConfirm}
+      title={t("logout")}
+      description={t("logoutConfirm")}
+      confirmLabel={t("logout")}
+      variant="destructive"
+      onConfirm={() => { setShowLogoutConfirm(false); logout(); }}
+    />
+    </>
   );
 }
