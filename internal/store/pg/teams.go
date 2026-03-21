@@ -206,16 +206,27 @@ func (s *PGTeamStore) RemoveMember(ctx context.Context, teamID, agentID uuid.UUI
 }
 
 func (s *PGTeamStore) ListMembers(ctx context.Context, teamID uuid.UUID) ([]store.TeamMemberData, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT m.team_id, m.agent_id, m.role, m.joined_at,
+	q := `SELECT m.team_id, m.agent_id, m.role, m.joined_at,
 		 COALESCE(a.agent_key, '') AS agent_key,
 		 COALESCE(a.display_name, '') AS display_name,
 		 COALESCE(a.frontmatter, '') AS frontmatter,
 		 COALESCE(a.other_config->>'emoji', '') AS emoji
 		 FROM agent_team_members m
 		 JOIN agents a ON a.id = m.agent_id
-		 WHERE m.team_id = $1 AND a.status = 'active'
-		 ORDER BY m.joined_at`, teamID)
+		 JOIN agent_teams at2 ON at2.id = m.team_id
+		 WHERE m.team_id = $1 AND a.status = 'active'`
+	args := []any{teamID}
+
+	if !store.IsCrossTenant(ctx) {
+		tid := store.TenantIDFromContext(ctx)
+		if tid != uuid.Nil {
+			q += fmt.Sprintf(" AND at2.tenant_id = $%d", len(args)+1)
+			args = append(args, tid)
+		}
+	}
+	q += ` ORDER BY m.joined_at`
+
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -236,20 +247,31 @@ func (s *PGTeamStore) ListMembers(ctx context.Context, teamID uuid.UUID) ([]stor
 }
 
 func (s *PGTeamStore) ListIdleMembers(ctx context.Context, teamID uuid.UUID) ([]store.TeamMemberData, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT m.team_id, m.agent_id, m.role, m.joined_at,
+	q := `SELECT m.team_id, m.agent_id, m.role, m.joined_at,
 		 COALESCE(a.agent_key, '') AS agent_key,
 		 COALESCE(a.display_name, '') AS display_name,
 		 COALESCE(a.frontmatter, '') AS frontmatter,
 		 COALESCE(a.other_config->>'emoji', '') AS emoji
 		 FROM agent_team_members m
 		 JOIN agents a ON a.id = m.agent_id
+		 JOIN agent_teams at2 ON at2.id = m.team_id
 		 WHERE m.team_id = $1 AND a.status = 'active' AND m.role != $2
 		   AND NOT EXISTS (
-		     SELECT 1 FROM team_tasks t
-		     WHERE t.owner_agent_id = m.agent_id AND t.team_id = $1 AND t.status = $3
-		   )
-		 ORDER BY m.joined_at`, teamID, store.TeamRoleLead, store.TeamTaskStatusInProgress)
+		     SELECT 1 FROM team_tasks tt
+		     WHERE tt.owner_agent_id = m.agent_id AND tt.team_id = $1 AND tt.status = $3
+		   )`
+	args := []any{teamID, store.TeamRoleLead, store.TeamTaskStatusInProgress}
+
+	if !store.IsCrossTenant(ctx) {
+		tid := store.TenantIDFromContext(ctx)
+		if tid != uuid.Nil {
+			q += fmt.Sprintf(" AND at2.tenant_id = $%d", len(args)+1)
+			args = append(args, tid)
+		}
+	}
+	q += ` ORDER BY m.joined_at`
+
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -270,16 +292,24 @@ func (s *PGTeamStore) ListIdleMembers(ctx context.Context, teamID uuid.UUID) ([]
 }
 
 func (s *PGTeamStore) GetTeamForAgent(ctx context.Context, agentID uuid.UUID) (*store.TeamData, error) {
-	row := s.db.QueryRowContext(ctx,
-		`SELECT t.id, t.name, t.lead_agent_id, t.description, t.status, t.settings, t.created_by, t.created_at, t.updated_at
+	q := `SELECT t.id, t.name, t.lead_agent_id, t.description, t.status, t.settings, t.created_by, t.created_at, t.updated_at
 		 FROM agent_teams t
 		 WHERE (
 		   t.lead_agent_id = $1
 		   OR EXISTS (SELECT 1 FROM agent_team_members m WHERE m.team_id = t.id AND m.agent_id = $1)
-		 ) AND t.status = $2
-		 ORDER BY (t.lead_agent_id = $1) DESC
-		 LIMIT 1`, agentID, store.TeamStatusActive)
+		 ) AND t.status = $2`
+	args := []any{agentID, store.TeamStatusActive}
 
+	if !store.IsCrossTenant(ctx) {
+		tid := store.TenantIDFromContext(ctx)
+		if tid != uuid.Nil {
+			q += fmt.Sprintf(" AND t.tenant_id = $%d", len(args)+1)
+			args = append(args, tid)
+		}
+	}
+	q += ` ORDER BY (t.lead_agent_id = $1) DESC LIMIT 1`
+
+	row := s.db.QueryRowContext(ctx, q, args...)
 	d, err := scanTeamRow(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -291,13 +321,24 @@ func (s *PGTeamStore) KnownUserIDs(ctx context.Context, teamID uuid.UUID, limit 
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT DISTINCT s.user_id
+	q := `SELECT DISTINCT s.user_id
 		 FROM sessions s
 		 JOIN agent_team_members m ON m.agent_id = s.agent_id
-		 WHERE m.team_id = $1 AND s.user_id != ''
-		 ORDER BY s.user_id
-		 LIMIT $2`, teamID, limit)
+		 JOIN agent_teams at2 ON at2.id = m.team_id
+		 WHERE m.team_id = $1 AND s.user_id != ''`
+	args := []any{teamID}
+
+	if !store.IsCrossTenant(ctx) {
+		tid := store.TenantIDFromContext(ctx)
+		if tid != uuid.Nil {
+			q += fmt.Sprintf(" AND at2.tenant_id = $%d", len(args)+1)
+			args = append(args, tid)
+		}
+	}
+	q += fmt.Sprintf(" ORDER BY s.user_id LIMIT $%d", len(args)+1)
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -320,24 +361,34 @@ func (s *PGTeamStore) KnownUserIDs(ctx context.Context, teamID uuid.UUID, limit 
 
 func (s *PGTeamStore) GrantTeamAccess(ctx context.Context, teamID uuid.UUID, userID, role, grantedBy string) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO team_user_grants (id, team_id, user_id, role, granted_by, created_at)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		`INSERT INTO team_user_grants (id, team_id, user_id, role, granted_by, created_at, tenant_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 ON CONFLICT (team_id, user_id) DO UPDATE SET role = EXCLUDED.role, granted_by = EXCLUDED.granted_by`,
-		store.GenNewID(), teamID, userID, role, grantedBy, time.Now(),
+		store.GenNewID(), teamID, userID, role, grantedBy, time.Now(), tenantIDForInsert(ctx),
 	)
 	return err
 }
 
 func (s *PGTeamStore) RevokeTeamAccess(ctx context.Context, teamID uuid.UUID, userID string) error {
-	_, err := s.db.ExecContext(ctx,
-		`DELETE FROM team_user_grants WHERE team_id = $1 AND user_id = $2`, teamID, userID)
+	tClause, tArgs, err := tenantClauseN(ctx, 3)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx,
+		`DELETE FROM team_user_grants WHERE team_id = $1 AND user_id = $2`+tClause,
+		append([]any{teamID, userID}, tArgs...)...)
 	return err
 }
 
 func (s *PGTeamStore) ListTeamGrants(ctx context.Context, teamID uuid.UUID) ([]store.TeamUserGrant, error) {
+	tClause, tArgs, err := tenantClauseN(ctx, 2)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, team_id, user_id, role, COALESCE(granted_by, ''), created_at
-		 FROM team_user_grants WHERE team_id = $1 ORDER BY created_at DESC`, teamID)
+		 FROM team_user_grants WHERE team_id = $1`+tClause+` ORDER BY created_at DESC`,
+		append([]any{teamID}, tArgs...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -396,10 +447,14 @@ func (s *PGTeamStore) ListUserTeams(ctx context.Context, userID string) ([]store
 }
 
 func (s *PGTeamStore) HasTeamAccess(ctx context.Context, teamID uuid.UUID, userID string) (bool, error) {
+	tClause, tArgs, err := tenantClauseN(ctx, 3)
+	if err != nil {
+		return false, err
+	}
 	var exists bool
-	err := s.db.QueryRowContext(ctx,
-		`SELECT EXISTS(SELECT 1 FROM team_user_grants WHERE team_id = $1 AND user_id = $2)`,
-		teamID, userID,
+	err = s.db.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM team_user_grants WHERE team_id = $1 AND user_id = $2`+tClause+`)`,
+		append([]any{teamID, userID}, tArgs...)...,
 	).Scan(&exists)
 	return exists, err
 }

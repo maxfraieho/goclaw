@@ -241,11 +241,19 @@ func (s *PGSkillStore) GetNextVersionLocked(ctx context.Context, slug string) (i
 }
 
 // ToggleSkill enables or disables a skill by UUID.
-func (s *PGSkillStore) ToggleSkill(id uuid.UUID, enabled bool) error {
-	_, err := s.db.Exec(
-		`UPDATE skills SET enabled = $1, updated_at = NOW() WHERE id = $2`,
-		enabled, id,
-	)
+func (s *PGSkillStore) ToggleSkill(ctx context.Context, id uuid.UUID, enabled bool) error {
+	q := `UPDATE skills SET enabled = $1, updated_at = NOW() WHERE id = $2`
+	args := []any{enabled, id}
+
+	if !store.IsCrossTenant(ctx) {
+		tid := store.TenantIDFromContext(ctx)
+		if tid != uuid.Nil {
+			q += fmt.Sprintf(" AND tenant_id = $%d", len(args)+1)
+			args = append(args, tid)
+		}
+	}
+
+	_, err := s.db.ExecContext(ctx, q, args...)
 	if err == nil {
 		s.BumpVersion()
 	}

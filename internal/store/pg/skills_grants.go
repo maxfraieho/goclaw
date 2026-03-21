@@ -44,8 +44,13 @@ func (s *PGSkillStore) GrantToAgent(ctx context.Context, skillID, agentID uuid.U
 // RevokeFromAgent revokes a skill grant from an agent.
 // Auto-demotes visibility from 'internal' back to 'private' when no agent grants remain.
 func (s *PGSkillStore) RevokeFromAgent(ctx context.Context, skillID, agentID uuid.UUID) error {
-	_, err := s.db.ExecContext(ctx,
-		"DELETE FROM skill_agent_grants WHERE skill_id = $1 AND agent_id = $2", skillID, agentID)
+	tClause, tArgs, err := tenantClauseN(ctx, 3)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx,
+		"DELETE FROM skill_agent_grants WHERE skill_id = $1 AND agent_id = $2"+tClause,
+		append([]any{skillID, agentID}, tArgs...)...)
 	if err != nil {
 		return err
 	}
@@ -68,8 +73,13 @@ func (s *PGSkillStore) RevokeFromAgent(ctx context.Context, skillID, agentID uui
 
 // ListAgentGrants returns all skill grants for an agent.
 func (s *PGSkillStore) ListAgentGrants(ctx context.Context, agentID uuid.UUID) ([]SkillGrantInfo, error) {
+	tClause, tArgs, err := tenantClauseN(ctx, 2)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.db.QueryContext(ctx,
-		"SELECT skill_id, pinned_version, granted_by FROM skill_agent_grants WHERE agent_id = $1", agentID)
+		"SELECT skill_id, pinned_version, granted_by FROM skill_agent_grants WHERE agent_id = $1"+tClause,
+		append([]any{agentID}, tArgs...)...)
 	if err != nil {
 		return nil, err
 	}

@@ -93,6 +93,7 @@ func (ph *PendingHistory) flushLoop() {
 
 // writeBatch writes a batch of messages to the DB store.
 func (ph *PendingHistory) writeBatch(batch []store.PendingMessage) {
+	// TODO: inject tenant context for multi-tenant (requires tenantID field on PendingHistory)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

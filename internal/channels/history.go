@@ -155,6 +155,7 @@ func (ph *PendingHistory) Record(historyKey string, entry HistoryEntry, limit in
 // populates RAM cache, and returns converted entries.
 // Called when RAM has no entries but DB store is available.
 func (ph *PendingHistory) loadFromDB(historyKey string) []HistoryEntry {
+	// TODO: inject tenant context for multi-tenant (requires tenantID field on PendingHistory)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -270,6 +271,7 @@ func (ph *PendingHistory) Clear(historyKey string) {
 		// Remove pending flushes for this key
 		ph.removeFromFlushBuf(historyKey)
 		// Delete from DB
+		// TODO: inject tenant context for multi-tenant (requires tenantID field on PendingHistory)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := ph.store.DeleteByKey(ctx, ph.channelName, historyKey); err != nil {

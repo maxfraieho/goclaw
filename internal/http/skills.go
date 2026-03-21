@@ -353,7 +353,7 @@ func (h *SkillsHandler) handleToggle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.skills.ToggleSkill(id, body.Enabled); err != nil {
+	if err := h.skills.ToggleSkill(r.Context(), id, body.Enabled); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
