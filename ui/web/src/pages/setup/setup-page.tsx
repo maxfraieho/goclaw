@@ -9,8 +9,10 @@ import { StepModel } from "./step-model";
 import { StepAgent } from "./step-agent";
 import { StepChannel } from "./step-channel";
 import { SetupCompleteModal } from "./setup-complete-modal";
-import { ROUTES, SUPPORTED_LANGUAGES, LANGUAGE_LABELS } from "@/lib/constants";
+import { Building2 } from "lucide-react";
+import { ROUTES, SUPPORTED_LANGUAGES, LANGUAGE_LABELS, LOCAL_STORAGE_KEYS } from "@/lib/constants";
 import { useUiStore } from "@/stores/use-ui-store";
+import { useTenants } from "@/hooks/use-tenants";
 import type { ProviderData } from "@/types/provider";
 import type { AgentData } from "@/types/agent";
 
@@ -41,6 +43,37 @@ function LanguageSelector() {
         </button>
       ))}
     </div>
+  );
+}
+
+function TenantSwitcher() {
+  const { t } = useTranslation("setup");
+  const { currentTenantName, isMultiTenant, isCrossTenant } = useTenants();
+  const navigate = useNavigate();
+
+  if (!isMultiTenant) return null;
+
+  const label = isCrossTenant && !currentTenantName
+    ? t("allTenants", { defaultValue: "All Tenants" })
+    : currentTenantName;
+
+  const handleSwitch = () => {
+    // Clear tenant selection and go to selector
+    localStorage.removeItem(LOCAL_STORAGE_KEYS.TENANT_ID);
+    navigate(ROUTES.SELECT_TENANT, { replace: true });
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleSwitch}
+      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      title={t("switchTenant", { defaultValue: "Switch tenant" })}
+    >
+      <Building2 className="h-3.5 w-3.5" />
+      <span>{label}</span>
+      <span className="text-[10px] underline underline-offset-2">{t("switchTenant", { defaultValue: "Switch" })}</span>
+    </button>
   );
 }
 
@@ -145,7 +178,10 @@ export function SetupPage() {
           >
             {t("skipSetup")}
           </button>
-          <LanguageSelector />
+          <div className="flex items-center gap-4">
+            <TenantSwitcher />
+            <LanguageSelector />
+          </div>
         </div>
       )}
 

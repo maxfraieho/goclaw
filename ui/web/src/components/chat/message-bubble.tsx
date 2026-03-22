@@ -51,7 +51,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         /* Normal message bubble — assistant uses full width, user capped at 85% */
         <div className={`rounded-lg px-4 py-2 ${
           isUser
-            ? "max-w-[85%] bg-[var(--chat-bubble-user)] text-white"
+            ? "max-w-[85%] bg-chat-bubble-user text-white"
             : "flex-1 min-w-0 bg-card text-card-foreground border border-border shadow-sm"
         }`}>
           {hasThinking && (
