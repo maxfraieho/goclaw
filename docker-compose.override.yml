@@ -1,0 +1,7 @@
+# Auth config and env for claude CLI inside goclaw container.
+services:
+  goclaw:
+    volumes:
+      - /home/vokov/.claude:/root/.claude:ro
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
