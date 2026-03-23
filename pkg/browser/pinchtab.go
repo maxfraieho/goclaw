@@ -110,16 +110,40 @@ func (p *PinchTabManager) Start(ctx context.Context) error {
 		p.profileID = ""
 	}
 
-	// Create a profile for GoClaw
+	// Create a profile for GoClaw; if it already exists (409 from unclean shutdown), reuse it.
 	prof, err := p.doPost(ctx, "/profiles", map[string]any{"name": "goclaw"})
 	if err != nil {
-		return fmt.Errorf("pinchtab create profile: %w", err)
+		if !strings.Contains(err.Error(), "409") {
+			return fmt.Errorf("pinchtab create profile: %w", err)
+		}
+		// Profile exists from previous session — find it by name.
+		all, listErr := p.doGet(ctx, "/profiles")
+		if listErr != nil {
+			return fmt.Errorf("pinchtab create profile: %w (list fallback: %v)", err, listErr)
+		}
+		var profiles []ptProfile
+		if jsonErr := json.Unmarshal(all, &profiles); jsonErr != nil {
+			return fmt.Errorf("pinchtab profile list decode: %w", jsonErr)
+		}
+		var found bool
+		for _, pp := range profiles {
+			if pp.Name == "goclaw" {
+				p.profileID = pp.ID
+				found = true
+				p.logger.Info("pinchtab: reusing existing profile", "profile", p.profileID)
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("pinchtab create profile: %w (profile not found after 409)", err)
+		}
+	} else {
+		var profResp ptProfile
+		if err := json.Unmarshal(prof, &profResp); err != nil {
+			return fmt.Errorf("pinchtab profile decode: %w", err)
+		}
+		p.profileID = profResp.ID
 	}
-	var profResp ptProfile
-	if err := json.Unmarshal(prof, &profResp); err != nil {
-		return fmt.Errorf("pinchtab profile decode: %w", err)
-	}
-	p.profileID = profResp.ID
 
 	// Start headless instance for that profile
 	inst, err := p.doPost(ctx, "/instances/start", map[string]any{
@@ -149,6 +173,9 @@ func (p *PinchTabManager) Stop(ctx context.Context) error {
 	}
 	// Best-effort stop; ignore errors (daemon stays alive)
 	_, _ = p.doDelete(ctx, "/instances/"+p.instanceID)
+	if p.profileID != "" {
+		_, _ = p.doDelete(ctx, "/profiles/"+p.profileID)
+	}
 	p.instanceID = ""
 	p.profileID = ""
 	return nil
