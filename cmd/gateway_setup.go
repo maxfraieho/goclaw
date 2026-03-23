@@ -90,28 +90,38 @@ func setupToolRegistry(
 
 	// Browser automation tool
 	if cfg.Tools.Browser.Enabled {
-		var opts []browser.Option
-		if cfg.Tools.Browser.RemoteURL != "" {
-			opts = append(opts, browser.WithRemoteURL(cfg.Tools.Browser.RemoteURL))
-			slog.Info("browser tool enabled", "remote", cfg.Tools.Browser.RemoteURL)
+		if cfg.Tools.Browser.PinchTabURL != "" {
+			// PinchTab backend: token-efficient (~800 tokens/page), runs as a local daemon.
+			// Set GOCLAW_BROWSER_PINCHTAB_URL=http://localhost:9867 to activate.
+			// Install: curl -fsSL https://pinchtab.com/install.sh | bash
+			pt := browser.NewPinchTabManager(cfg.Tools.Browser.PinchTabURL)
+			toolsReg.Register(browser.NewBrowserTool(pt))
+			slog.Info("browser tool enabled (PinchTab)", "url", cfg.Tools.Browser.PinchTabURL)
 		} else {
-			opts = append(opts, browser.WithHeadless(cfg.Tools.Browser.Headless))
-			slog.Info("browser tool enabled", "headless", cfg.Tools.Browser.Headless)
+			// go-rod backend: direct CDP, manages Chrome locally or via remote sidecar.
+			var opts []browser.Option
+			if cfg.Tools.Browser.RemoteURL != "" {
+				opts = append(opts, browser.WithRemoteURL(cfg.Tools.Browser.RemoteURL))
+				slog.Info("browser tool enabled (go-rod remote)", "cdp", cfg.Tools.Browser.RemoteURL)
+			} else {
+				opts = append(opts, browser.WithHeadless(cfg.Tools.Browser.Headless))
+				slog.Info("browser tool enabled (go-rod local)", "headless", cfg.Tools.Browser.Headless)
+			}
+			if cfg.Tools.Browser.ActionTimeoutMs > 0 {
+				opts = append(opts, browser.WithActionTimeout(time.Duration(cfg.Tools.Browser.ActionTimeoutMs)*time.Millisecond))
+			}
+			if cfg.Tools.Browser.IdleTimeoutMs > 0 {
+				opts = append(opts, browser.WithIdleTimeout(time.Duration(cfg.Tools.Browser.IdleTimeoutMs)*time.Millisecond))
+			} else if cfg.Tools.Browser.IdleTimeoutMs < 0 {
+				// Explicitly disable idle reaper with negative value
+				opts = append(opts, browser.WithIdleTimeout(0))
+			}
+			if cfg.Tools.Browser.MaxPages > 0 {
+				opts = append(opts, browser.WithMaxPages(cfg.Tools.Browser.MaxPages))
+			}
+			browserMgr = browser.New(opts...)
+			toolsReg.Register(browser.NewBrowserTool(browserMgr))
 		}
-		if cfg.Tools.Browser.ActionTimeoutMs > 0 {
-			opts = append(opts, browser.WithActionTimeout(time.Duration(cfg.Tools.Browser.ActionTimeoutMs)*time.Millisecond))
-		}
-		if cfg.Tools.Browser.IdleTimeoutMs > 0 {
-			opts = append(opts, browser.WithIdleTimeout(time.Duration(cfg.Tools.Browser.IdleTimeoutMs)*time.Millisecond))
-		} else if cfg.Tools.Browser.IdleTimeoutMs < 0 {
-			// Explicitly disable idle reaper with negative value
-			opts = append(opts, browser.WithIdleTimeout(0))
-		}
-		if cfg.Tools.Browser.MaxPages > 0 {
-			opts = append(opts, browser.WithMaxPages(cfg.Tools.Browser.MaxPages))
-		}
-		browserMgr = browser.New(opts...)
-		toolsReg.Register(browser.NewBrowserTool(browserMgr))
 	}
 
 	// Web tools (web_search + web_fetch)
