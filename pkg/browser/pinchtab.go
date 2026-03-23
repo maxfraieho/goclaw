@@ -441,6 +441,9 @@ func (p *PinchTabManager) doGetRaw(ctx context.Context, path string) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
+	if p.token != "" {
+		req.Header.Set("Authorization", "Bearer "+p.token)
+	}
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return nil, err
