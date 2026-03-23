@@ -263,6 +263,12 @@ func (c *Config) applyEnvOverrides() {
 	if c.Tools.Browser.RemoteURL != "" {
 		c.Tools.Browser.Enabled = true
 	}
+	// PinchTab: token-efficient browser automation via PinchTab daemon
+	// When set, PinchTab is used instead of go-rod (~800 tokens/page vs 8000)
+	envStr("GOCLAW_BROWSER_PINCHTAB_URL", &c.Tools.Browser.PinchTabURL)
+	if c.Tools.Browser.PinchTabURL != "" {
+		c.Tools.Browser.Enabled = true
+	}
 }
 
 // applyContextPruningDefaults auto-enables context pruning when the Anthropic

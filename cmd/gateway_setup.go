@@ -88,16 +88,26 @@ func setupToolRegistry(
 
 	// Browser automation tool
 	if cfg.Tools.Browser.Enabled {
-		var opts []browser.Option
-		if cfg.Tools.Browser.RemoteURL != "" {
-			opts = append(opts, browser.WithRemoteURL(cfg.Tools.Browser.RemoteURL))
-			slog.Info("browser tool enabled", "remote", cfg.Tools.Browser.RemoteURL)
+		if cfg.Tools.Browser.PinchTabURL != "" {
+			// PinchTab backend: token-efficient (~800 tokens/page), runs as a local daemon.
+			// Set GOCLAW_BROWSER_PINCHTAB_URL=http://localhost:9867 to activate.
+			// Install: curl -fsSL https://pinchtab.com/install.sh | bash
+			pt := browser.NewPinchTabManager(cfg.Tools.Browser.PinchTabURL)
+			toolsReg.Register(browser.NewBrowserTool(pt))
+			slog.Info("browser tool enabled (PinchTab)", "url", cfg.Tools.Browser.PinchTabURL)
 		} else {
-			opts = append(opts, browser.WithHeadless(cfg.Tools.Browser.Headless))
-			slog.Info("browser tool enabled", "headless", cfg.Tools.Browser.Headless)
+			// go-rod backend: direct CDP, manages Chrome locally or via remote sidecar.
+			var opts []browser.Option
+			if cfg.Tools.Browser.RemoteURL != "" {
+				opts = append(opts, browser.WithRemoteURL(cfg.Tools.Browser.RemoteURL))
+				slog.Info("browser tool enabled (go-rod remote)", "cdp", cfg.Tools.Browser.RemoteURL)
+			} else {
+				opts = append(opts, browser.WithHeadless(cfg.Tools.Browser.Headless))
+				slog.Info("browser tool enabled (go-rod local)", "headless", cfg.Tools.Browser.Headless)
+			}
+			browserMgr = browser.New(opts...)
+			toolsReg.Register(browser.NewBrowserTool(browserMgr))
 		}
-		browserMgr = browser.New(opts...)
-		toolsReg.Register(browser.NewBrowserTool(browserMgr))
 	}
 
 	// Web tools (web_search + web_fetch)

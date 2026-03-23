@@ -12,12 +12,13 @@ import (
 )
 
 // BrowserTool implements tools.Tool for browser automation.
+// Accepts any Backend: Manager (go-rod/CDP) or PinchTabManager (PinchTab HTTP API).
 type BrowserTool struct {
-	manager *Manager
+	manager Backend
 }
 
-// NewBrowserTool creates a BrowserTool wrapping a Manager.
-func NewBrowserTool(manager *Manager) *BrowserTool {
+// NewBrowserTool creates a BrowserTool wrapping a Backend implementation.
+func NewBrowserTool(manager Backend) *BrowserTool {
 	return &BrowserTool{manager: manager}
 }
 
