@@ -94,7 +94,7 @@ func setupToolRegistry(
 			// PinchTab backend: token-efficient (~800 tokens/page), runs as a local daemon.
 			// Set GOCLAW_BROWSER_PINCHTAB_URL=http://localhost:9867 to activate.
 			// Install: curl -fsSL https://pinchtab.com/install.sh | bash
-			pt := browser.NewPinchTabManager(cfg.Tools.Browser.PinchTabURL)
+			pt := browser.NewPinchTabManager(cfg.Tools.Browser.PinchTabURL, cfg.Tools.Browser.PinchTabToken)
 			toolsReg.Register(browser.NewBrowserTool(pt))
 			slog.Info("browser tool enabled (PinchTab)", "url", cfg.Tools.Browser.PinchTabURL)
 		} else {

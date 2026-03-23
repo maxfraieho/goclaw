@@ -275,6 +275,7 @@ func (c *Config) applyEnvOverrides() {
 	if c.Tools.Browser.PinchTabURL != "" {
 		c.Tools.Browser.Enabled = true
 	}
+	envStr("GOCLAW_BROWSER_PINCHTAB_TOKEN", &c.Tools.Browser.PinchTabToken)
 }
 
 
