@@ -76,11 +76,53 @@ type ptTabsResp struct {
 	Tabs []ptTabInfo `json:"tabs"`
 }
 
+type ptSnapshotNode struct {
+	Ref      string `json:"ref"`
+	Role     string `json:"role"`
+	Name     string `json:"name"`
+	Depth    int    `json:"depth"`
+	Checked  *bool  `json:"checked,omitempty"`
+	Disabled bool   `json:"disabled,omitempty"`
+	Value    string `json:"value,omitempty"`
+}
+
 type ptSnapshotResp struct {
-	Snapshot string `json:"snapshot"`
-	URL      string `json:"url"`
-	Title    string `json:"title"`
-	TabID    string `json:"tabId"`
+	Snapshot string           `json:"snapshot"` // legacy text format
+	Nodes    []ptSnapshotNode `json:"nodes"`    // v0.8.x structured format
+	URL      string           `json:"url"`
+	Title    string           `json:"title"`
+	TabID    string           `json:"tabId"`
+}
+
+// buildSnapshotText converts structured nodes to the text format expected by parseRefsFromSnapshot.
+// Format per line: "  - role "name" [ref=eN]" with depth-based indentation.
+func buildSnapshotText(nodes []ptSnapshotNode) string {
+	var sb strings.Builder
+	for _, n := range nodes {
+		indent := strings.Repeat("  ", n.Depth)
+		line := indent + "- " + n.Role
+		if n.Name != "" {
+			line += " " + fmt.Sprintf("%q", n.Name)
+		}
+		if n.Value != "" {
+			line += " value=" + fmt.Sprintf("%q", n.Value)
+		}
+		if n.Checked != nil {
+			if *n.Checked {
+				line += " [checked]"
+			} else {
+				line += " [unchecked]"
+			}
+		}
+		if n.Disabled {
+			line += " [disabled]"
+		}
+		if n.Ref != "" {
+			line += " [ref=" + n.Ref + "]"
+		}
+		sb.WriteString(line + "\n")
+	}
+	return sb.String()
 }
 
 type ptActionResp struct {
@@ -286,7 +328,11 @@ func (p *PinchTabManager) Snapshot(ctx context.Context, targetID string, opts Sn
 		return nil, fmt.Errorf("pinchtab snapshot decode: %w", err)
 	}
 
+	// PinchTab v0.8.x returns structured nodes; older versions returned snapshot text directly.
 	snap := resp.Snapshot
+	if snap == "" && len(resp.Nodes) > 0 {
+		snap = buildSnapshotText(resp.Nodes)
+	}
 	if opts.MaxChars > 0 && len(snap) > opts.MaxChars {
 		snap = snap[:opts.MaxChars] + "\n[...TRUNCATED]"
 	}
