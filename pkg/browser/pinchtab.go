@@ -25,6 +25,7 @@ import (
 type PinchTabManager struct {
 	mu         sync.Mutex
 	baseURL    string      // e.g. "http://localhost:9867"
+	token      string      // Bearer token for Authorization header (optional)
 	client     *http.Client
 	profileID  string
 	instanceID string
@@ -33,9 +34,11 @@ type PinchTabManager struct {
 
 // NewPinchTabManager creates a manager that delegates to a PinchTab server.
 // baseURL is the PinchTab server address, e.g. "http://localhost:9867".
-func NewPinchTabManager(baseURL string) *PinchTabManager {
+// token is an optional Bearer token for API authentication.
+func NewPinchTabManager(baseURL, token string) *PinchTabManager {
 	return &PinchTabManager{
 		baseURL: strings.TrimRight(baseURL, "/"),
+		token:   token,
 		client:  &http.Client{Timeout: 30 * time.Second},
 		logger:  slog.Default(),
 	}
@@ -445,6 +448,9 @@ func (p *PinchTabManager) doDelete(ctx context.Context, path string) ([]byte, er
 }
 
 func (p *PinchTabManager) do(req *http.Request) ([]byte, error) {
+	if p.token != "" {
+		req.Header.Set("Authorization", "Bearer "+p.token)
+	}
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("pinchtab request %s %s: %w", req.Method, req.URL.Path, err)
