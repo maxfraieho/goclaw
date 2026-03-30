@@ -1,6 +1,9 @@
 package browser
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Backend is the browser automation interface implemented by Manager (go-rod/CDP)
 // and PinchTabManager (PinchTab HTTP API).
@@ -11,7 +14,8 @@ type Backend interface {
 	ListTabs(ctx context.Context) ([]TabInfo, error)
 	OpenTab(ctx context.Context, url string) (*TabInfo, error)
 	CloseTab(ctx context.Context, targetID string) error
-	ConsoleMessages(targetID string) []ConsoleMessage
+	ActionTimeout() time.Duration
+	ConsoleMessages(ctx context.Context, targetID string) []ConsoleMessage
 	Snapshot(ctx context.Context, targetID string, opts SnapshotOptions) (*SnapshotResult, error)
 	Screenshot(ctx context.Context, targetID string, fullPage bool) ([]byte, error)
 	Navigate(ctx context.Context, targetID string, url string) error

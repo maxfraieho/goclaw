@@ -294,10 +294,15 @@ func (p *PinchTabManager) CloseTab(ctx context.Context, targetID string) error {
 	return err
 }
 
+// ActionTimeout returns the default per-action timeout for PinchTab operations.
+func (p *PinchTabManager) ActionTimeout() time.Duration {
+	return 30 * time.Second
+}
+
 // ConsoleMessages returns captured console messages for a tab.
 // PinchTab tracks console output since v0.8 (feat: add console and errors tracking).
-func (p *PinchTabManager) ConsoleMessages(targetID string) []ConsoleMessage {
-	data, err := p.doGet(context.Background(), "/tabs/"+targetID+"/console")
+func (p *PinchTabManager) ConsoleMessages(ctx context.Context, targetID string) []ConsoleMessage {
+	data, err := p.doGet(ctx, "/tabs/"+targetID+"/console")
 	if err != nil {
 		return []ConsoleMessage{}
 	}
