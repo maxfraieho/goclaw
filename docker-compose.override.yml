@@ -1,7 +1,11 @@
 # Auth config and env for claude CLI inside goclaw container.
+# Set CLAUDE_CONFIG_DIR in .env to your local ~/.claude path:
+#   macOS:      CLAUDE_CONFIG_DIR=/Users/<user>/.claude
+#   Linux:      CLAUDE_CONFIG_DIR=/home/<user>/.claude
 services:
   goclaw:
+    image: kroschu/goclaw:pinchtab
     volumes:
-      - /home/vokov/.claude:/root/.claude:ro
+      - ${CLAUDE_CONFIG_DIR:-/root/.claude}:/root/.claude:ro
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
