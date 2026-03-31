@@ -1,0 +1,50 @@
+{
+  "configVersion": "0.8.0",
+  "server": {
+    "port": "9867",
+    "bind": "0.0.0.0",
+    "token": "REPLACE_WITH_STRONG_RANDOM_TOKEN",
+    "stateDir": "REPLACE_WITH_PINCHTAB_STATE_DIR"
+  },
+  "browser": {
+    "version": "",
+    "binary": "",
+    "extraFlags": "--disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-features=CalculateNativeWinOcclusion --disable-hang-monitor --disable-dev-shm-usage --no-first-run --no-default-browser-check",
+    "extensionPaths": []
+  },
+  "instanceDefaults": {
+    "mode": "head",
+    "maxTabs": 20,
+    "stealthLevel": "light",
+    "tabEvictionPolicy": "close_lru"
+  },
+  "multiInstance": {
+    "strategy": "always-on",
+    "allocationPolicy": "fcfs",
+    "instancePortStart": 9868,
+    "instancePortEnd": 9968,
+    "restart": {
+      "maxRestarts": 50,
+      "initBackoffSec": 2,
+      "maxBackoffSec": 60,
+      "stableAfterSec": 120
+    }
+  },
+  "timeouts": {
+    "actionSec": 60,
+    "navigateSec": 120,
+    "shutdownSec": 10,
+    "waitNavMs": 2000
+  },
+  "profiles": {
+    "baseDir": "REPLACE_WITH_PINCHTAB_PROFILES_DIR",
+    "defaultProfile": "default"
+  },
+  "observability": {
+    "activity": {
+      "enabled": true,
+      "sessionIdleSec": 1800,
+      "retentionDays": 1
+    }
+  }
+}
