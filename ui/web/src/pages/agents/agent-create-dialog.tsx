@@ -36,7 +36,7 @@ interface AgentCreateDialogProps {
 export function AgentCreateDialog({ open, onOpenChange, onCreate }: AgentCreateDialogProps) {
   const { t } = useTranslation("agents");
   const agentPresets = useAgentPresets();
-  const { providers } = useProviders();
+  const { providers, refresh: refreshProviders } = useProviders();
   const [emoji, setEmoji] = useState("");
   const [agentKey, setAgentKey] = useState("");
   const [keyTouched, setKeyTouched] = useState(false);
@@ -60,6 +60,12 @@ export function AgentCreateDialog({ open, onOpenChange, onCreate }: AgentCreateD
   const { models, loading: modelsLoading } = useProviderModels(selectedProviderId);
   const { verify, verifying, result: verifyResult, reset: resetVerify } = useProviderVerify();
 
+  useEffect(() => {
+    if (open) {
+      void refreshProviders();
+    }
+  }, [open, refreshProviders]);
+
   // Reset verification when provider or model changes
   useEffect(() => {
     resetVerify();
@@ -68,12 +74,6 @@ export function AgentCreateDialog({ open, onOpenChange, onCreate }: AgentCreateD
   const handleVerify = async () => {
     if (!selectedProviderId || !model.trim()) return;
     await verify(selectedProviderId, model.trim());
-  };
-
-  const handleVerifyAndCreate = async () => {
-    if (!selectedProviderId || !model.trim()) return;
-    const res = await verify(selectedProviderId, model.trim());
-    if (res?.valid) await handleCreate();
   };
 
   const handleCreate = async () => {
@@ -293,12 +293,8 @@ export function AgentCreateDialog({ open, onOpenChange, onCreate }: AgentCreateD
           </Button>
           {loading ? (
             <Button disabled>{t("create.creating")}</Button>
-          ) : !verifyResult?.valid && selectedProviderId && model.trim() ? (
-            <Button onClick={handleVerifyAndCreate} disabled={verifying || !displayName.trim() || !agentKey.trim() || !isValidSlug(agentKey) || (agentType === "predefined" && !description.trim())}>
-              {verifying ? t("create.checking") : t("create.checkAndCreate")}
-            </Button>
           ) : (
-            <Button onClick={handleCreate} disabled={!displayName.trim() || !agentKey.trim() || !isValidSlug(agentKey) || !provider.trim() || !model.trim() || !verifyResult?.valid || (agentType === "predefined" && !description.trim())}>
+            <Button onClick={handleCreate} disabled={!displayName.trim() || !agentKey.trim() || !isValidSlug(agentKey) || !provider.trim() || !model.trim() || (agentType === "predefined" && !description.trim())}>
               {t("create.create")}
             </Button>
           )}
