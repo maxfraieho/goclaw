@@ -1,0 +1,29 @@
+# Alpine/low-memory tuning for the optional Chrome CDP sidecar.
+#
+# Use this only together with docker-compose.browser.yml when PinchTab is not
+# available and the remote Chrome fallback is actually needed.
+#
+# Usage:
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f docker-compose.postgres.yml \
+#     -f docker-compose.browser.yml \
+#     -f docker-compose.browser.alpine.yml \
+#     up -d
+#
+# Notes:
+# - No host port is published for Chrome; goclaw talks to it over the compose network.
+# - Lower shm/memory/cpu settings keep the fallback lighter on weak tablets.
+
+services:
+  chrome:
+    ports: !reset []
+    shm_size: ${CHROME_SHM_SIZE:-256m}
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: "1.0"
+
+  postgres:
+    ports: !reset []

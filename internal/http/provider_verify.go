@@ -99,7 +99,7 @@ func (h *ProvidersHandler) handleVerifyProvider(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
 
 	_, err = provider.Chat(ctx, providers.ChatRequest{

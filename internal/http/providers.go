@@ -33,7 +33,7 @@ type ProvidersHandler struct {
 	cliMu           sync.Mutex                       // serializes Claude CLI provider create to prevent duplicates
 	msgBus          *bus.MessageBus
 	sysConfigStore  store.SystemConfigStore
-	tracingStore    store.TracingStore // optional: for provider-scoped pool activity
+	tracingStore    store.TracingStore   // optional: for provider-scoped pool activity
 	agents          store.AgentCRUDStore // optional: for provider pool activity agent lookup
 }
 
@@ -172,7 +172,8 @@ func (h *ProvidersHandler) registerInMemory(p *store.LLMProviderData) {
 		h.providerReg.RegisterForTenant(p.TenantID, providers.NewOpenAIProvider(p.Name, "ollama", config.DockerLocalhost(host+"/v1"), "llama3.3"))
 		return
 	}
-	if p.APIKey == "" {
+	apiKey := store.ResolveProviderAPIKey(p)
+	if apiKey == "" {
 		return
 	}
 	apiBase := h.resolveAPIBase(p)
@@ -185,24 +186,24 @@ func (h *ProvidersHandler) registerInMemory(p *store.LLMProviderData) {
 		}
 		h.providerReg.RegisterForTenant(p.TenantID, codex)
 	case store.ProviderAnthropicNative:
-		h.providerReg.RegisterForTenant(p.TenantID, providers.NewAnthropicProvider(p.APIKey,
+		h.providerReg.RegisterForTenant(p.TenantID, providers.NewAnthropicProvider(apiKey,
 			providers.WithAnthropicBaseURL(apiBase)))
 	case store.ProviderDashScope:
-		h.providerReg.RegisterForTenant(p.TenantID, providers.NewDashScopeProvider(p.Name, p.APIKey, apiBase, ""))
+		h.providerReg.RegisterForTenant(p.TenantID, providers.NewDashScopeProvider(p.Name, apiKey, apiBase, ""))
 	case store.ProviderBailian:
 		base := apiBase
 		if base == "" {
 			base = "https://coding-intl.dashscope.aliyuncs.com/v1"
 		}
-		h.providerReg.RegisterForTenant(p.TenantID, providers.NewOpenAIProvider(p.Name, p.APIKey, base, "qwen3.5-plus"))
+		h.providerReg.RegisterForTenant(p.TenantID, providers.NewOpenAIProvider(p.Name, apiKey, base, "qwen3.5-plus"))
 	case store.ProviderNovita:
 		base := apiBase
 		if base == "" {
 			base = store.NovitaDefaultAPIBase
 		}
-		h.providerReg.RegisterForTenant(p.TenantID, providers.NewOpenAIProvider(p.Name, p.APIKey, base, store.NovitaDefaultModel))
+		h.providerReg.RegisterForTenant(p.TenantID, providers.NewOpenAIProvider(p.Name, apiKey, base, store.NovitaDefaultModel))
 	default:
-		prov := providers.NewOpenAIProvider(p.Name, p.APIKey, apiBase, "")
+		prov := providers.NewOpenAIProvider(p.Name, apiKey, apiBase, "")
 		if p.ProviderType == store.ProviderMiniMax {
 			prov.WithChatPath("/text/chatcompletion_v2")
 		}

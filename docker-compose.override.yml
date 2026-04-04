@@ -4,7 +4,7 @@
 #   Linux:      CLAUDE_CONFIG_DIR=/home/<user>/.claude
 services:
   goclaw:
-    image: kroschu/goclaw:pinchtab
+    # image: kroschu/goclaw:pinchtab  # local build active
     volumes:
       - ${CLAUDE_CONFIG_DIR:-/root/.claude}:/root/.claude:ro
     environment:

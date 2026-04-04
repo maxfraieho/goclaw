@@ -51,7 +51,8 @@ func (h *ProvidersHandler) handleListProviderModels(w http.ResponseWriter, r *ht
 		return
 	}
 
-	if p.APIKey == "" {
+	apiKey := store.ResolveProviderAPIKey(p)
+	if apiKey == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgRequired, "API key")})
 		return
 	}
@@ -63,9 +64,9 @@ func (h *ProvidersHandler) handleListProviderModels(w http.ResponseWriter, r *ht
 
 	switch p.ProviderType {
 	case "anthropic_native":
-		models, err = fetchAnthropicModels(ctx, p.APIKey, h.resolveAPIBase(p))
+		models, err = fetchAnthropicModels(ctx, apiKey, h.resolveAPIBase(p))
 	case "gemini_native":
-		models, err = fetchGeminiModels(ctx, p.APIKey)
+		models, err = fetchGeminiModels(ctx, apiKey)
 	case "bailian":
 		models = bailianModels()
 	case "dashscope":
@@ -80,7 +81,7 @@ func (h *ProvidersHandler) handleListProviderModels(w http.ResponseWriter, r *ht
 		if apiBase == "" {
 			apiBase = "https://api.openai.com/v1"
 		}
-		models, err = fetchOpenAIModels(ctx, apiBase, p.APIKey)
+		models, err = fetchOpenAIModels(ctx, apiBase, apiKey)
 	}
 
 	if err != nil {

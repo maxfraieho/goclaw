@@ -294,7 +294,8 @@ func registerProvidersFromDB(registry *providers.Registry, provStore store.Provi
 			continue
 		}
 
-		if p.APIKey == "" {
+		apiKey := store.ResolveProviderAPIKey(&p)
+		if apiKey == "" {
 			continue
 		}
 		// Fall back to config/env api_base when DB provider has none set.
@@ -313,34 +314,34 @@ func registerProvidersFromDB(registry *providers.Registry, provStore store.Provi
 			}
 			registry.RegisterForTenant(p.TenantID, codex)
 		case store.ProviderAnthropicNative:
-			registry.RegisterForTenant(p.TenantID, providers.NewAnthropicProvider(p.APIKey,
+			registry.RegisterForTenant(p.TenantID, providers.NewAnthropicProvider(apiKey,
 				providers.WithAnthropicBaseURL(p.APIBase)))
 		case store.ProviderDashScope:
-			registry.RegisterForTenant(p.TenantID, providers.NewDashScopeProvider(p.Name, p.APIKey, p.APIBase, ""))
+			registry.RegisterForTenant(p.TenantID, providers.NewDashScopeProvider(p.Name, apiKey, p.APIBase, ""))
 		case store.ProviderBailian:
 			base := p.APIBase
 			if base == "" {
 				base = "https://coding-intl.dashscope.aliyuncs.com/v1"
 			}
-			registry.RegisterForTenant(p.TenantID, providers.NewOpenAIProvider(p.Name, p.APIKey, base, "qwen3.5-plus"))
+			registry.RegisterForTenant(p.TenantID, providers.NewOpenAIProvider(p.Name, apiKey, base, "qwen3.5-plus"))
 		case store.ProviderZai:
 			base := p.APIBase
 			if base == "" {
 				base = "https://api.z.ai/api/paas/v4"
 			}
-			registry.RegisterForTenant(p.TenantID, providers.NewOpenAIProvider(p.Name, p.APIKey, base, "glm-5"))
+			registry.RegisterForTenant(p.TenantID, providers.NewOpenAIProvider(p.Name, apiKey, base, "glm-5"))
 		case store.ProviderZaiCoding:
 			base := p.APIBase
 			if base == "" {
 				base = "https://api.z.ai/api/coding/paas/v4"
 			}
-			registry.RegisterForTenant(p.TenantID, providers.NewOpenAIProvider(p.Name, p.APIKey, base, "glm-5"))
+			registry.RegisterForTenant(p.TenantID, providers.NewOpenAIProvider(p.Name, apiKey, base, "glm-5"))
 		case store.ProviderOllamaCloud:
 			base := p.APIBase
 			if base == "" {
 				base = "https://ollama.com/v1"
 			}
-			registry.RegisterForTenant(p.TenantID, providers.NewOpenAIProvider(p.Name, p.APIKey, base, "llama3.3"))
+			registry.RegisterForTenant(p.TenantID, providers.NewOpenAIProvider(p.Name, apiKey, base, "llama3.3"))
 		case store.ProviderSuno:
 			// Suno is a media-only provider (music gen). Register as OpenAI-compat
 			// so credentialProvider interface works for API key/base extraction.
@@ -348,7 +349,7 @@ func registerProvidersFromDB(registry *providers.Registry, provStore store.Provi
 			if base == "" {
 				base = "https://api.sunoapi.org"
 			}
-			prov := providers.NewOpenAIProvider(p.Name, p.APIKey, base, "")
+			prov := providers.NewOpenAIProvider(p.Name, apiKey, base, "")
 			prov.WithProviderType(p.ProviderType)
 			registry.RegisterForTenant(p.TenantID, prov)
 		case store.ProviderNovita:
@@ -356,9 +357,9 @@ func registerProvidersFromDB(registry *providers.Registry, provStore store.Provi
 			if base == "" {
 				base = store.NovitaDefaultAPIBase
 			}
-			registry.RegisterForTenant(p.TenantID, providers.NewOpenAIProvider(p.Name, p.APIKey, base, store.NovitaDefaultModel))
+			registry.RegisterForTenant(p.TenantID, providers.NewOpenAIProvider(p.Name, apiKey, base, store.NovitaDefaultModel))
 		default:
-			prov := providers.NewOpenAIProvider(p.Name, p.APIKey, p.APIBase, "")
+			prov := providers.NewOpenAIProvider(p.Name, apiKey, p.APIBase, "")
 			prov.WithProviderType(p.ProviderType)
 			if p.ProviderType == store.ProviderMiniMax {
 				prov.WithChatPath("/text/chatcompletion_v2")

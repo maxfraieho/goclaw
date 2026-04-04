@@ -1,0 +1,24 @@
+# Alpine host override for a host-level PinchTab daemon.
+#
+# Usage:
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f docker-compose.postgres.yml \
+#     -f docker-compose.selfservice.yml \
+#     -f docker-compose.alpine-pinchtab.yml \
+#     up -d
+#
+# Why this file exists:
+# - PinchTab is the preferred browser backend in this fork.
+# - PinchTab runs on the Alpine host, not as a compose sidecar.
+# - The goclaw container reaches it via host.docker.internal.
+# - Postgres does not need a published host port for this deployment.
+
+services:
+  goclaw:
+    environment:
+      - GOCLAW_BROWSER_PINCHTAB_URL=${GOCLAW_BROWSER_PINCHTAB_URL:-http://host.docker.internal:9867}
+      - GOCLAW_BROWSER_PINCHTAB_TOKEN=${GOCLAW_BROWSER_PINCHTAB_TOKEN:-}
+
+  postgres:
+    ports: !reset []

@@ -6,7 +6,7 @@ GoClaw підтримує два бекенди для браузерної ав
 
 | Бекенд | Env var | Токени/сторінку | Опис |
 |--------|---------|-----------------|------|
-| **PinchTab** (рекомендовано) | `GOCLAW_BROWSER_PINCHTAB_URL` | ~800 | HTTP API до локального демона |
+| **PinchTab** (рекомендовано) | `GOCLAW_BROWSER_PINCHTAB_URL` | ~800 | HTTP API до окремого локального демона |
 | **go-rod/CDP** | `GOCLAW_BROWSER_REMOTE_URL` | ~8000 | Прямий CDP до Chrome |
 
 ## Архітектура
@@ -15,7 +15,7 @@ GoClaw підтримує два бекенди для браузерної ав
 agent (claude-cli)
   └─► browser tool (goclaw bridge MCP)
         └─► pkg/browser/PinchTabManager
-              └─► HTTP + Bearer token → localhost:9867 (PinchTab daemon)
+              └─► HTTP + Bearer token → PinchTab daemon (:9867)
                     └─► headless або visible Chrome
 ```
 
@@ -40,9 +40,16 @@ npm install -g --prefix ~/.local pinchtab   # встановлює ~/.local/bin/
 ### 2. Ініціалізувати і запустити демон
 
 ```bash
-~/.local/bin/pinchtab daemon install   # генерує ~/.config/systemd/user/pinchtab.service
+~/.local/bin/pinchtab daemon install   # systemd-user helper, якщо він доступний
 systemctl --user daemon-reload
 systemctl --user enable --now pinchtab
+```
+
+Для Alpine/OpenRC, де `systemd --user` зазвичай немає, запускайте PinchTab як окремий хостовий сервіс будь-яким наявним supervisor-ом. Мінімальний ручний запуск:
+
+```bash
+mkdir -p ~/.local/bin ~/.pinchtab
+nohup ~/.local/bin/pinchtab daemon start >/tmp/pinchtab.log 2>&1 &
 ```
 
 ### 3. Отримати токен
@@ -56,10 +63,13 @@ cat ~/.pinchtab/config.json | python3 -c "import sys,json; print(json.load(sys.s
 ### 4. Додати до goclaw .env
 
 ```bash
+# Для docker compose на Linux/Alpine хості:
 # ~/projects/goclaw/.env
-GOCLAW_BROWSER_PINCHTAB_URL=http://localhost:9867
+GOCLAW_BROWSER_PINCHTAB_URL=http://host.docker.internal:9867
 GOCLAW_BROWSER_PINCHTAB_TOKEN=<token з ~/.pinchtab/config.json>
 ```
+
+Якщо `goclaw` запускається не в контейнері, а напряму на хості, тоді URL може бути `http://localhost:9867`.
 
 ### 5. Застосувати конфіг PinchTab (знімає обмеження IDPI, дозволяє всі дії)
 
@@ -69,7 +79,7 @@ cat > ~/.pinchtab/config.json << 'CONF'
   "configVersion": "0.8.0",
   "server": {
     "port": "9867",
-    "bind": "127.0.0.1",
+    "bind": "0.0.0.0",
     "token": "<TOKEN>",
     "stateDir": "/home/<USER>/.pinchtab",
     "engine": ""
@@ -179,6 +189,8 @@ systemctl --user daemon-reload
 systemctl --user restart pinchtab
 ```
 
+Для Alpine/OpenRC сенс той самий: процес PinchTab повинен бачити `DISPLAY` і `XAUTHORITY`, якщо потрібен видимий Chrome.
+
 ### 8. Перезапустити goclaw
 
 ```bash
@@ -203,6 +215,37 @@ systemctl --user start goclaw-ui    # ← обов'язково після gocla
 **Важливо:** `goclaw-ui` залежить від `goclaw` (`Requires=goclaw.service`).
 При зупинці/рестарті `goclaw` → `goclaw-ui` теж зупиняється. Завжди запускати обидва.
 
+## Docker Compose на Alpine/Linux хості
+
+Рекомендований стек для цього форку:
+
+```bash
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.postgres.yml \
+  -f docker-compose.selfservice.yml \
+  -f docker-compose.alpine-pinchtab.yml \
+  up -d
+```
+
+Що робить `docker-compose.alpine-pinchtab.yml`:
+- підключає `goclaw` до хостового PinchTab через `http://host.docker.internal:9867`
+- не публікує `postgres:5432` на хості, щоб не чіпати інші сервіси
+- не піднімає `chrome` sidecar, бо для PinchTab він не потрібен
+
+Fallback на прямий CDP потрібен лише якщо PinchTab недоступний:
+
+```bash
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.postgres.yml \
+  -f docker-compose.browser.yml \
+  -f docker-compose.browser.alpine.yml \
+  up -d
+```
+
+У цьому режимі healthcheck sidecar залишається через `http://127.0.0.1:9222/json/version`, але порт `9222` не публікується на хості.
+
 ---
 
 ## Перевірка стану
@@ -215,12 +258,16 @@ systemctl --user status pinchtab goclaw goclaw-ui
 TOKEN=$(cat ~/.pinchtab/config.json | python3 -c "import sys,json; print(json.load(sys.stdin)['server']['token'])")
 curl -H "Authorization: Bearer $TOKEN" http://localhost:9867/profiles
 
+# Реальне з'єднання container -> PinchTab
+docker compose exec goclaw sh -lc \
+  'wget -qO- --header="Authorization: Bearer '"$TOKEN"'" http://host.docker.internal:9867/profiles >/dev/null && echo OK'
+
 # UI
 curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/
 
 # Лог при успішному старті goclaw
 journalctl --user -u goclaw -n 30 | grep "browser tool enabled"
-# Очікується: level=INFO msg="browser tool enabled (PinchTab)" url=http://localhost:9867
+# Очікується: level=INFO msg="browser tool enabled (PinchTab)" url=http://host.docker.internal:9867
 ```
 
 ---
