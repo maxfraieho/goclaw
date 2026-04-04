@@ -30,6 +30,11 @@ type CronJob struct {
 	CreatedAtMS    int64        `json:"createdAtMs"`
 	UpdatedAtMS    int64        `json:"updatedAtMs"`
 	DeleteAfterRun bool         `json:"deleteAfterRun,omitempty"`
+	Stateless      bool         `json:"stateless"`
+	Deliver        bool         `json:"deliver"`
+	DeliverChannel string       `json:"deliverChannel"`
+	DeliverTo      string       `json:"deliverTo"`
+	WakeHeartbeat  bool         `json:"wakeHeartbeat"`
 }
 
 // CronSchedule defines when a job should run.
@@ -43,13 +48,9 @@ type CronSchedule struct {
 
 // CronPayload describes what a job does when triggered.
 type CronPayload struct {
-	Kind          string `json:"kind"`
-	Message       string `json:"message"`
-	Command       string `json:"command,omitempty"`
-	Deliver       bool   `json:"deliver"`
-	Channel       string `json:"channel,omitempty"`
-	To            string `json:"to,omitempty"`
-	WakeHeartbeat bool   `json:"wake_heartbeat,omitempty"` // trigger heartbeat after job completes
+	Kind    string `json:"kind"`
+	Message string `json:"message"`
+	Command string `json:"command,omitempty"`
 }
 
 // CronJobState tracks runtime state for a job.
@@ -87,10 +88,11 @@ type CronJobPatch struct {
 	Enabled        *bool         `json:"enabled,omitempty"`
 	Schedule       *CronSchedule `json:"schedule,omitempty"`
 	Message        string        `json:"message,omitempty"`
-	Deliver        *bool         `json:"deliver,omitempty"`
-	Channel        *string       `json:"channel,omitempty"`
-	To             *string       `json:"to,omitempty"`
 	DeleteAfterRun *bool         `json:"deleteAfterRun,omitempty"`
+	Stateless      *bool         `json:"stateless,omitempty"`
+	Deliver        *bool         `json:"deliver,omitempty"`
+	DeliverChannel *string       `json:"deliverChannel,omitempty"`
+	DeliverTo      *string       `json:"deliverTo,omitempty"`
 	WakeHeartbeat  *bool         `json:"wakeHeartbeat,omitempty"`
 }
 
@@ -235,17 +237,14 @@ func MergeCronSchedule(current CronSchedule, patch *CronSchedule) CronSchedule {
 	}
 
 	merged := CronSchedule{Kind: newKind}
+	// TZ: always use patch value for all schedule kinds. Empty = UTC (default).
+	merged.TZ = patch.TZ
 	switch newKind {
 	case "cron":
 		if patch.Expr != "" {
 			merged.Expr = patch.Expr
 		} else if current.Kind == newKind {
 			merged.Expr = current.Expr
-		}
-		if patch.TZ != "" {
-			merged.TZ = patch.TZ
-		} else if current.Kind == newKind {
-			merged.TZ = current.TZ
 		}
 	case "every":
 		if patch.EveryMS != nil {
@@ -298,25 +297,25 @@ func ValidateCronSchedule(schedule *CronSchedule) error {
 func ApplyCronScheduleUpdates(updates map[string]any, schedule CronSchedule) {
 	updates["schedule_kind"] = schedule.Kind
 
+	// TZ applies to all schedule kinds (used for display and cron evaluation).
+	if schedule.TZ != "" {
+		updates["timezone"] = schedule.TZ
+	} else {
+		updates["timezone"] = nil
+	}
+
 	switch schedule.Kind {
 	case "cron":
 		updates["cron_expression"] = schedule.Expr
-		if schedule.TZ != "" {
-			updates["timezone"] = schedule.TZ
-		} else {
-			updates["timezone"] = nil
-		}
 		updates["interval_ms"] = nil
 		updates["run_at"] = nil
 	case "every":
 		updates["cron_expression"] = nil
-		updates["timezone"] = nil
 		updates["interval_ms"] = *schedule.EveryMS
 		updates["run_at"] = nil
 	case "at":
 		runAt := time.UnixMilli(*schedule.AtMS)
 		updates["cron_expression"] = nil
-		updates["timezone"] = nil
 		updates["interval_ms"] = nil
 		updates["run_at"] = runAt
 	}

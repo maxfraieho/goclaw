@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/google/uuid"
 
@@ -22,6 +23,11 @@ import (
 
 const maxSkillUploadSize = 20 << 20 // 20 MB
 
+var (
+	aggregateInstallDeps = skills.AggregateMissingDeps
+	installManagedDeps   = skills.InstallDeps
+)
+
 // SkillsHandler handles skill management HTTP endpoints.
 type SkillsHandler struct {
 	skills         store.SkillManageStore
@@ -32,6 +38,7 @@ type SkillsHandler struct {
 	tenantCfgStore store.SkillTenantConfigStore
 	tenantStore    store.TenantStore
 	db             *sql.DB // for export/import direct queries
+	uploadLocks    sync.Map // per-slug mutex; bounded by validated slug set, entries are tiny (*sync.Mutex)
 }
 
 // NewSkillsHandler creates a handler for skill management endpoints.
@@ -45,6 +52,11 @@ func (h *SkillsHandler) tenantSkillsDir(r *http.Request) string {
 	tid := store.TenantIDFromContext(r.Context())
 	slug := store.TenantSlugFromContext(r.Context())
 	return config.TenantSkillsStoreDir(h.dataDir, tid, slug)
+}
+
+func (h *SkillsHandler) skillUploadLock(scopeKey string) *sync.Mutex {
+	actual, _ := h.uploadLocks.LoadOrStore(scopeKey, &sync.Mutex{})
+	return actual.(*sync.Mutex)
 }
 
 // emitCacheInvalidate broadcasts a cache invalidation event if msgBus is set.
@@ -243,13 +255,17 @@ func (h *SkillsHandler) handleInstallDeps(w http.ResponseWriter, r *http.Request
 	if !h.requireMasterTenant(w, r) {
 		return
 	}
-	dirs := h.skills.ListSystemSkillDirs(r.Context())
+	// Use explicit master tenant context for system skill operations,
+	// consistent with rescanAndUpdate() pattern.
+	masterCtx := store.WithTenantID(r.Context(), store.MasterTenantID)
+
+	dirs := h.skills.ListSystemSkillDirs(masterCtx)
 	if len(dirs) == 0 {
 		writeJSON(w, http.StatusOK, map[string]string{"message": "no system skills"})
 		return
 	}
 
-	manifest, missing := skills.AggregateMissingDeps(dirs)
+	manifest, missing := aggregateInstallDeps(dirs)
 	if len(missing) == 0 {
 		writeJSON(w, http.StatusOK, map[string]string{"message": "all deps satisfied"})
 		return
@@ -262,25 +278,24 @@ func (h *SkillsHandler) handleInstallDeps(w http.ResponseWriter, r *http.Request
 		})
 	}
 
-	result, err := skills.InstallDeps(r.Context(), manifest, missing)
+	result, err := installManagedDeps(masterCtx, manifest, missing)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
-	// Re-check all system skills and update status after install
-	allSkills := h.skills.ListAllSkills(r.Context())
+	// Re-check all system skills, persist missing deps, and update status.
+	allSkills := h.skills.ListAllSkills(masterCtx)
+	statusChanged := false
 	for _, sk := range allSkills {
 		if !sk.IsSystem {
 			continue
 		}
-		dir, exists := dirs[sk.Slug]
-		if !exists {
+		if _, exists := dirs[sk.Slug]; !exists {
 			continue
 		}
 		m := h.scanWithFallback(sk)
 		if m == nil || m.IsEmpty() {
-			_ = dir // dir was used for direct scan; fallback uses sk.BaseDir
 			continue
 		}
 		ok, miss := skills.CheckSkillDeps(m)
@@ -288,10 +303,20 @@ func (h *SkillsHandler) handleInstallDeps(w http.ResponseWriter, r *http.Request
 		if err != nil {
 			continue
 		}
-		if ok && sk.Status == "archived" {
-			_ = h.skills.UpdateSkill(r.Context(), id, map[string]any{"status": "active"})
-			h.skills.BumpVersion()
+
+		// Persist actual missing deps to DB so reload reflects reality.
+		_ = h.skills.StoreMissingDeps(masterCtx, id, miss)
+
+		// Update status in both directions.
+		switch {
+		case ok && sk.Status == "archived":
+			_ = h.skills.UpdateSkill(masterCtx, id, map[string]any{"status": "active"})
+			statusChanged = true
+		case !ok && sk.Status != "archived":
+			_ = h.skills.UpdateSkill(masterCtx, id, map[string]any{"status": "archived"})
+			statusChanged = true
 		}
+
 		status := "active"
 		if !ok {
 			status = "archived"
@@ -306,6 +331,9 @@ func (h *SkillsHandler) handleInstallDeps(w http.ResponseWriter, r *http.Request
 				},
 			})
 		}
+	}
+	if statusChanged {
+		h.skills.BumpVersion()
 	}
 
 	if h.msgBus != nil {

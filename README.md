@@ -185,8 +185,11 @@ chmod +x prepare-env.sh && ./prepare-env.sh
 # Add at least one GOCLAW_*_API_KEY to .env, then:
 make up
 
-# Web Dashboard at http://localhost:3000
+# Web Dashboard at http://localhost:18790 (built-in)
 # Health check: curl http://localhost:18790/health
+
+# Optional: separate nginx for custom SSL/reverse proxy
+# make up WITH_WEB_NGINX=1  → Dashboard at http://localhost:3000
 ```
 
 `make up` creates a Docker network, embeds the correct version from git tags, builds and starts all services, and runs database migrations automatically.
@@ -222,7 +225,32 @@ make down WITH_BROWSER=1 WITH_OTEL=1
 
 When `GOCLAW_*_API_KEY` environment variables are set, the gateway auto-onboards without interactive prompts — detects provider, runs migrations, and seeds default data.
 
-> For detailed configuration and Docker image tags, see the [Deployment Guide](https://docs.goclaw.sh/#deploy-docker-compose).
+> **Docker image variants:**
+> | Image | Description |
+> |-------|-------------|
+> | `latest` | Backend + embedded web UI + Python (**recommended**) |
+> | `latest-base` | Backend API-only, no web UI, no runtimes |
+> | `latest-full` | All runtimes + skill dependencies pre-installed |
+> | `latest-otel` | Latest + OpenTelemetry tracing |
+> | `goclaw-web` | Standalone nginx + React SPA (for custom reverse proxy) |
+>
+> For custom builds (Tailscale, Redis): `docker build --build-arg ENABLE_TSNET=true ...`
+> See the [Deployment Guide](https://docs.goclaw.sh/#deploy-docker-compose) for details.
+
+## Updating
+
+### Docker
+```bash
+docker compose pull && docker compose up -d
+```
+
+### Binary (with embedded web UI)
+```bash
+goclaw update --apply    # Downloads, verifies SHA256, swaps binary, restarts
+```
+
+### Web Dashboard
+Open **About** dialog → click **Update Now** (admin only). The update includes both backend and web dashboard when using the default `latest` image.
 
 ## Multi-Agent Orchestration
 
@@ -327,3 +355,13 @@ GoClaw is built upon the original [OpenClaw](https://github.com/openclaw/opencla
 ## License
 
 [CC BY-NC 4.0](LICENSE) — Creative Commons Attribution-NonCommercial 4.0 International
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=nextlevelbuilder%2Fgoclaw&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=nextlevelbuilder/goclaw&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=nextlevelbuilder/goclaw&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=nextlevelbuilder/goclaw&type=date&legend=top-left" />
+ </picture>
+</a>

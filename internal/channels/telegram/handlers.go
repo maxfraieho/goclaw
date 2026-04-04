@@ -41,9 +41,6 @@ func (c *Channel) handleMessage(ctx context.Context, update telego.Update) {
 
 	userID := fmt.Sprintf("%d", user.ID)
 	senderID := userID
-	if user.Username != "" {
-		senderID = fmt.Sprintf("%s|%s", userID, user.Username)
-	}
 
 	isGroup := message.Chat.Type == "group" || message.Chat.Type == "supergroup"
 
@@ -226,9 +223,14 @@ func (c *Channel) handleMessage(ctx context.Context, update telego.Update) {
 	}
 
 	// Compute sender label for group context (used in history + current message annotation)
-	senderLabel := user.FirstName
+	displayName := strings.TrimSpace(user.FirstName + " " + user.LastName)
+	senderLabel := displayName
 	if user.Username != "" {
-		senderLabel = "@" + user.Username
+		if displayName != "" {
+			senderLabel = "@" + user.Username + " (" + displayName + ")"
+		} else {
+			senderLabel = "@" + user.Username
+		}
 	}
 
 	// --- Group mention gating (matching TS mentionGate logic) ---
@@ -331,9 +333,14 @@ func (c *Channel) handleMessage(ctx context.Context, update telego.Update) {
 			// Collect contact even when bot is not mentioned (cache prevents DB spam).
 			if cc := c.ContactCollector(); cc != nil {
 				contactName := strings.TrimSpace(user.FirstName + " " + user.LastName)
-				cc.EnsureContact(ctx, c.Type(), c.Name(), userID, userID, contactName, user.Username, "group", "user")
+				cc.EnsureContact(ctx, c.Type(), c.Name(), senderID, userID, contactName, user.Username, "group", "user", "", "")
 				// Also collect group chat itself as a contact (for group permission / merge).
-				cc.EnsureContact(ctx, c.Type(), c.Name(), chatIDStr, "", message.Chat.Title, "", "group", "group")
+				cc.EnsureContact(ctx, c.Type(), c.Name(), chatIDStr, "", message.Chat.Title, "", "group", "group", "", "")
+				// Collect forum topic as a distinct delivery target (including General).
+				if isForum && messageThreadID > 0 {
+					threadStr := fmt.Sprintf("%d", messageThreadID)
+					cc.EnsureContact(ctx, c.Type(), c.Name(), chatIDStr, "", message.Chat.Title, "", "group", "topic", threadStr, "topic")
+				}
 			}
 
 			slog.Debug("telegram group message recorded (no mention)",
@@ -482,7 +489,7 @@ func (c *Channel) handleMessage(ctx context.Context, update telego.Update) {
 				}
 				if len(histMedia) > 0 {
 					histTags := buildMediaTags(histMedia)
-					annotated = histTags + "\n\n" + annotated
+					annotated = "[Media from recent group messages — only analyze if user asks about them]\n" + histTags + "\n[/Media]\n\n" + annotated
 				}
 				for _, e := range histErrors {
 					slog.Warn("telegram: history media download failed",
@@ -585,10 +592,16 @@ func (c *Channel) handleMessage(ctx context.Context, update telego.Update) {
 
 	// Collect contact for processed messages (DM + group-mentioned).
 	if cc := c.ContactCollector(); cc != nil {
-		cc.EnsureContact(ctx, c.Type(), c.Name(), senderID, userID, user.FirstName, user.Username, peerKind, "user")
+		contactName := strings.TrimSpace(user.FirstName + " " + user.LastName)
+		cc.EnsureContact(ctx, c.Type(), c.Name(), senderID, userID, contactName, user.Username, peerKind, "user", "", "")
 		// Also collect group chat itself as a contact (for group permission / merge).
 		if isGroup {
-			cc.EnsureContact(ctx, c.Type(), c.Name(), chatIDStr, "", message.Chat.Title, "", "group", "group")
+			cc.EnsureContact(ctx, c.Type(), c.Name(), chatIDStr, "", message.Chat.Title, "", "group", "group", "", "")
+			// Collect forum topic as a distinct delivery target (including General).
+			if isForum && messageThreadID > 0 {
+				threadStr := fmt.Sprintf("%d", messageThreadID)
+				cc.EnsureContact(ctx, c.Type(), c.Name(), chatIDStr, "", message.Chat.Title, "", "group", "topic", threadStr, "topic")
+			}
 		}
 	}
 
