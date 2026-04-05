@@ -24,8 +24,8 @@ import (
 // Repo: https://github.com/pinchtab/pinchtab
 type PinchTabManager struct {
 	mu         sync.Mutex
-	baseURL    string      // e.g. "http://localhost:9867"
-	token      string      // Bearer token for Authorization header (optional)
+	baseURL    string // e.g. "http://localhost:9867"
+	token      string // Bearer token for Authorization header (optional)
 	client     *http.Client
 	profileID  string
 	instanceID string
@@ -52,8 +52,13 @@ type ptProfile struct {
 }
 
 type ptInstance struct {
-	ID   string `json:"id"`
-	Mode string `json:"mode"`
+	ID        string `json:"id"`
+	ProfileID string `json:"profileId,omitempty"`
+	ProfileName string `json:"profileName,omitempty"`
+	Mode      string `json:"mode"`
+	Status    string `json:"status,omitempty"`
+	Error     string `json:"error,omitempty"`
+	LastError string `json:"lastError,omitempty"`
 }
 
 type ptInstancesResp struct {
@@ -145,61 +150,18 @@ func (p *PinchTabManager) Start(ctx context.Context) error {
 	// Reuse existing instance if healthy
 	if p.instanceID != "" {
 		if _, err := p.getInstanceLocked(p.instanceID); err == nil {
-			return nil
+			if err := p.waitInstanceReadyLocked(ctx, p.instanceID); err == nil {
+				return nil
+			}
 		}
 		p.logger.Info("pinchtab: instance gone, recreating", "instance", p.instanceID)
 		p.instanceID = ""
 		p.profileID = ""
 	}
 
-	// Create a profile for GoClaw; if it already exists (409 from unclean shutdown), reuse it.
-	prof, err := p.doPost(ctx, "/profiles", map[string]any{"name": "goclaw"})
-	if err != nil {
-		if !strings.Contains(err.Error(), "409") {
-			return fmt.Errorf("pinchtab create profile: %w", err)
-		}
-		// Profile exists from previous session — find it by name.
-		all, listErr := p.doGet(ctx, "/profiles")
-		if listErr != nil {
-			return fmt.Errorf("pinchtab create profile: %w (list fallback: %v)", err, listErr)
-		}
-		var profiles []ptProfile
-		if jsonErr := json.Unmarshal(all, &profiles); jsonErr != nil {
-			return fmt.Errorf("pinchtab profile list decode: %w", jsonErr)
-		}
-		var found bool
-		for _, pp := range profiles {
-			if pp.Name == "goclaw" {
-				p.profileID = pp.ID
-				found = true
-				p.logger.Info("pinchtab: reusing existing profile", "profile", p.profileID)
-				break
-			}
-		}
-		if !found {
-			return fmt.Errorf("pinchtab create profile: %w (profile not found after 409)", err)
-		}
-	} else {
-		var profResp ptProfile
-		if err := json.Unmarshal(prof, &profResp); err != nil {
-			return fmt.Errorf("pinchtab profile decode: %w", err)
-		}
-		p.profileID = profResp.ID
+	if err := p.startWithRecoveryLocked(ctx); err != nil {
+		return err
 	}
-
-	// Start headless instance for that profile
-	inst, err := p.doPost(ctx, "/instances/start", map[string]any{
-		"profileId": p.profileID,
-		"mode":      "headless",
-	})
-	if err != nil {
-		return fmt.Errorf("pinchtab start instance: %w", err)
-	}
-	var instResp ptInstance
-	if err := json.Unmarshal(inst, &instResp); err != nil {
-		return fmt.Errorf("pinchtab instance decode: %w", err)
-	}
-	p.instanceID = instResp.ID
 	p.logger.Info("pinchtab: instance started", "instance", p.instanceID, "profile", p.profileID)
 	return nil
 }
@@ -260,15 +222,39 @@ func (p *PinchTabManager) listTabsLocked(ctx context.Context) ([]TabInfo, error)
 	if err != nil {
 		return nil, err
 	}
-	var resp ptTabsResp
-	if err := json.Unmarshal(data, &resp); err != nil {
+	tabs, err := decodePinchTabTabs(data)
+	if err != nil {
 		return nil, fmt.Errorf("pinchtab tabs decode: %w", err)
 	}
-	result := make([]TabInfo, len(resp.Tabs))
-	for i, t := range resp.Tabs {
+	result := make([]TabInfo, len(tabs))
+	for i, t := range tabs {
 		result[i] = TabInfo{TargetID: t.TabID, URL: t.URL, Title: t.Title}
 	}
 	return result, nil
+}
+
+func decodePinchTabTabs(data []byte) ([]ptTabInfo, error) {
+	var wrapped ptTabsResp
+	if err := json.Unmarshal(data, &wrapped); err == nil && wrapped.Tabs != nil {
+		return wrapped.Tabs, nil
+	}
+
+	var direct []ptTabInfo
+	if err := json.Unmarshal(data, &direct); err == nil {
+		return direct, nil
+	}
+
+	var wrappedAny map[string]json.RawMessage
+	if err := json.Unmarshal(data, &wrappedAny); err == nil {
+		if raw, ok := wrappedAny["tabs"]; ok {
+			var tabs []ptTabInfo
+			if err := json.Unmarshal(raw, &tabs); err == nil {
+				return tabs, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("unexpected response: %s", string(data))
 }
 
 func (p *PinchTabManager) OpenTab(ctx context.Context, url string) (*TabInfo, error) {
@@ -554,4 +540,251 @@ func (p *PinchTabManager) getInstanceLocked(id string) (*ptInstance, error) {
 		return nil, err
 	}
 	return &inst, nil
+}
+
+func (p *PinchTabManager) startWithRecoveryLocked(ctx context.Context) error {
+	var firstErr error
+	for attempt := 1; attempt <= 2; attempt++ {
+		if attempt > 1 {
+			p.logger.Warn("pinchtab: retrying instance startup after cleanup", "attempt", attempt)
+			p.cleanupBrokenStateLocked(ctx)
+		}
+		if err := p.startOnceLocked(ctx); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			p.logger.Warn("pinchtab: startup attempt failed", "attempt", attempt, "error", err)
+			continue
+		}
+		return nil
+	}
+	return firstErr
+}
+
+func (p *PinchTabManager) startOnceLocked(ctx context.Context) error {
+	profileID, err := p.ensureProfileLocked(ctx, "goclaw")
+	if err != nil {
+		return err
+	}
+	p.profileID = profileID
+
+	inst, err := p.doPost(ctx, "/instances/start", map[string]any{
+		"profileId": p.profileID,
+		"mode":      "headless",
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "already has an active instance") {
+			instID, findErr := p.findActiveInstanceForProfileLocked(ctx, p.profileID)
+			if findErr != nil {
+				return fmt.Errorf("pinchtab start instance: %w (active lookup: %v)", err, findErr)
+			}
+			if instID == "" {
+				return fmt.Errorf("pinchtab start instance: %w (active instance not found)", err)
+			}
+			p.logger.Info("pinchtab: reusing active instance", "instance", instID, "profile", p.profileID)
+			p.instanceID = instID
+			return p.waitInstanceReadyLocked(ctx, p.instanceID)
+		}
+		return fmt.Errorf("pinchtab start instance: %w", err)
+	}
+	var instResp ptInstance
+	if err := json.Unmarshal(inst, &instResp); err != nil {
+		return fmt.Errorf("pinchtab instance decode: %w", err)
+	}
+	if instResp.ID == "" {
+		return fmt.Errorf("pinchtab start instance: empty instance id")
+	}
+	p.instanceID = instResp.ID
+	if err := p.waitInstanceReadyLocked(ctx, p.instanceID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (p *PinchTabManager) ensureProfileLocked(ctx context.Context, name string) (string, error) {
+	prof, err := p.doPost(ctx, "/profiles", map[string]any{"name": name})
+	if err != nil {
+		if !strings.Contains(err.Error(), "409") {
+			return "", fmt.Errorf("pinchtab create profile: %w", err)
+		}
+		existing, findErr := p.findProfileByNameLocked(ctx, name)
+		if findErr != nil {
+			return "", fmt.Errorf("pinchtab create profile: %w (list fallback: %v)", err, findErr)
+		}
+		if existing == "" {
+			return "", fmt.Errorf("pinchtab create profile: %w (profile not found after 409)", err)
+		}
+		p.logger.Info("pinchtab: reusing existing profile", "profile", existing)
+		return existing, nil
+	}
+	var profResp ptProfile
+	if err := json.Unmarshal(prof, &profResp); err != nil {
+		return "", fmt.Errorf("pinchtab profile decode: %w", err)
+	}
+	if profResp.ID == "" {
+		return "", fmt.Errorf("pinchtab profile decode: empty profile id")
+	}
+	return profResp.ID, nil
+}
+
+func (p *PinchTabManager) findProfileByNameLocked(ctx context.Context, name string) (string, error) {
+	all, err := p.doGet(ctx, "/profiles")
+	if err != nil {
+		return p.findProfileByNameFromInstancesLocked(ctx, name)
+	}
+	profiles, err := decodePinchTabProfiles(all)
+	if err != nil {
+		return p.findProfileByNameFromInstancesLocked(ctx, name)
+	}
+	for _, pp := range profiles {
+		if pp.Name == name {
+			return pp.ID, nil
+		}
+	}
+	return p.findProfileByNameFromInstancesLocked(ctx, name)
+}
+
+func decodePinchTabProfiles(data []byte) ([]ptProfile, error) {
+	var direct []ptProfile
+	if err := json.Unmarshal(data, &direct); err == nil {
+		return direct, nil
+	}
+
+	var wrapped map[string]json.RawMessage
+	if err := json.Unmarshal(data, &wrapped); err == nil {
+		for _, key := range []string{"profiles", "items"} {
+			raw, ok := wrapped[key]
+			if !ok {
+				continue
+			}
+			var profiles []ptProfile
+			if err := json.Unmarshal(raw, &profiles); err == nil {
+				return profiles, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("unexpected response: %s", string(data))
+}
+
+func (p *PinchTabManager) findProfileByNameFromInstancesLocked(ctx context.Context, name string) (string, error) {
+	instances, err := p.listInstancesLocked(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, inst := range instances {
+		if inst.ProfileName == name && inst.ProfileID != "" {
+			return inst.ProfileID, nil
+		}
+	}
+	return "", nil
+}
+
+func (p *PinchTabManager) findActiveInstanceForProfileLocked(ctx context.Context, profileID string) (string, error) {
+	instances, err := p.listInstancesLocked(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, inst := range instances {
+		if inst.ProfileID != profileID {
+			continue
+		}
+		status := strings.ToLower(strings.TrimSpace(inst.Status))
+		if status == "" || status == "running" || status == "starting" || status == "ready" {
+			return inst.ID, nil
+		}
+	}
+	return "", nil
+}
+
+func (p *PinchTabManager) listInstancesLocked(ctx context.Context) ([]ptInstance, error) {
+	data, err := p.doGet(ctx, "/instances")
+	if err != nil {
+		return nil, err
+	}
+
+	var wrapped ptInstancesResp
+	if err := json.Unmarshal(data, &wrapped); err == nil && wrapped.Instances != nil {
+		return wrapped.Instances, nil
+	}
+
+	var direct []ptInstance
+	if err := json.Unmarshal(data, &direct); err == nil {
+		return direct, nil
+	}
+
+	var wrappedAny map[string]json.RawMessage
+	if err := json.Unmarshal(data, &wrappedAny); err == nil {
+		if raw, ok := wrappedAny["instances"]; ok {
+			var instances []ptInstance
+			if err := json.Unmarshal(raw, &instances); err == nil {
+				return instances, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("pinchtab instances decode: unexpected response: %s", string(data))
+}
+
+func (p *PinchTabManager) waitInstanceReadyLocked(ctx context.Context, id string) error {
+	deadline := time.Now().Add(12 * time.Second)
+	var lastErr error
+	for {
+		if err := ctx.Err(); err != nil {
+			if lastErr != nil {
+				return fmt.Errorf("pinchtab instance %s not ready: %w", id, lastErr)
+			}
+			return fmt.Errorf("pinchtab instance %s startup canceled: %w", id, err)
+		}
+		inst, err := p.getInstanceLocked(id)
+		if err == nil {
+			status := strings.ToLower(strings.TrimSpace(inst.Status))
+			if status == "error" || status == "crashed" || status == "failed" {
+				msg := strings.TrimSpace(inst.Error)
+				if msg == "" {
+					msg = strings.TrimSpace(inst.LastError)
+				}
+				if msg == "" {
+					msg = "instance entered error state"
+				}
+				return fmt.Errorf("pinchtab instance %s unhealthy: %s", id, msg)
+			}
+			if _, tabsErr := p.listTabsLocked(ctx); tabsErr == nil {
+				return nil
+			} else {
+				lastErr = tabsErr
+			}
+		} else {
+			lastErr = err
+		}
+		if time.Now().After(deadline) {
+			if lastErr != nil {
+				return fmt.Errorf("pinchtab instance %s not ready: %w", id, lastErr)
+			}
+			return fmt.Errorf("pinchtab instance %s not ready before timeout", id)
+		}
+		select {
+		case <-ctx.Done():
+			if lastErr != nil {
+				return fmt.Errorf("pinchtab instance %s not ready: %w", id, lastErr)
+			}
+			return fmt.Errorf("pinchtab instance %s startup canceled: %w", id, ctx.Err())
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+}
+
+func (p *PinchTabManager) cleanupBrokenStateLocked(ctx context.Context) {
+	if p.instanceID != "" {
+		if _, err := p.doDelete(ctx, "/instances/"+p.instanceID); err != nil {
+			p.logger.Warn("pinchtab: failed to delete broken instance", "instance", p.instanceID, "error", err)
+		}
+	}
+	if p.profileID != "" {
+		if _, err := p.doDelete(ctx, "/profiles/"+p.profileID); err != nil {
+			p.logger.Warn("pinchtab: failed to delete broken profile", "profile", p.profileID, "error", err)
+		}
+	}
+	p.instanceID = ""
+	p.profileID = ""
 }

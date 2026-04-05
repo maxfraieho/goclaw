@@ -87,7 +87,7 @@ cat > ~/.pinchtab/config.json << 'CONF'
   "browser": {
     "version": "144.0.7559.133",
     "binary": "/home/<USER>/.pinchtab/chrome-visible.sh",
-    "extraFlags": "",
+    "extraFlags": "--disable-gpu --disable-dev-shm-usage",
     "extensionPaths": []
   },
   "instanceDefaults": {
@@ -191,6 +191,25 @@ systemctl --user restart pinchtab
 
 Для Alpine/OpenRC сенс той самий: процес PinchTab повинен бачити `DISPLAY` і `XAUTHORITY`, якщо потрібен видимий Chrome.
 
+### 7b. Alpine/OpenRC: sandboxless Chrome
+
+На Alpine або іншому server/headless оточенні без user namespaces PinchTab **не приймає** `--no-sandbox` через `browser.extraFlags` і валідатор конфіга відхиляє його.
+
+Правильний варіант:
+
+```bash
+# ~/.pinchtab/config.json
+# ЗАЛИШИТИ в extraFlags тільки безпечні прапори типу:
+"extraFlags": "--disable-gpu --disable-dev-shm-usage"
+```
+
+```bash
+# /etc/init.d/pinchtab або інший supervisor
+export PINCHTAB_CHROME_NO_SANDBOX=1
+```
+
+Для OpenRC це має бути в самому init-скрипті або через `command_env`, щоб env var успадковував процес `pinchtab`.
+
 ### 8. Перезапустити goclaw
 
 ```bash
@@ -222,11 +241,18 @@ systemctl --user start goclaw-ui    # ← обов'язково після gocla
 ```bash
 docker compose \
   -f docker-compose.yml \
+  -f docker-compose.override.yml \
   -f docker-compose.postgres.yml \
   -f docker-compose.selfservice.yml \
   -f docker-compose.alpine-pinchtab.yml \
   up -d
 ```
+
+> **Важливо:** При явному переліку `-f` файлів Docker Compose НЕ завантажує
+> `docker-compose.override.yml` автоматично — його треба вказувати явно.
+> `docker-compose.override.yml` містить `image: kroschu/goclaw:pinchtab-fix`
+> (форк з підтримкою PinchTab); без нього запускається upstream образ
+> `ghcr.io/nextlevelbuilder/goclaw:latest`, який не підтримує PinchTab backend.
 
 Що робить `docker-compose.alpine-pinchtab.yml`:
 - підключає `goclaw` до хостового PinchTab через `http://host.docker.internal:9867`
@@ -298,6 +324,7 @@ systemctl --user restart pinchtab
 | `409 Conflict` при повторному запуску | `Stop()` видаляв інстанс але не профіль | `2ccfa07` — `Stop()` тепер видаляє профіль; `Start()` перевикористовує профіль якщо вже існує |
 | `screenshot: HTTP 401` | `doGetRaw()` (бінарна відповідь) не додавав `Authorization` header | `813b92b` — токен додано і в `doGetRaw()` |
 | `snapshot: 0 refs` | PinchTab v0.8.x повертає `nodes[]` замість рядка `snapshot` | `fcc558e` — додано `ptSnapshotNode`, `buildSnapshotText()` для конвертації nodes → текст |
+| `browser tool enabled` без `(PinchTab)` в логах — go-rod fallback замість PinchTab | `docker-compose.override.yml` з image форку не включався в compose команду; контейнер запускався з upstream образом без PinchTab | Розкоментовано `image: kroschu/goclaw:pinchtab-fix` в `docker-compose.override.yml`; додано `-f docker-compose.override.yml` до команди запуску |
 
 ---
 
@@ -306,4 +333,5 @@ systemctl --user restart pinchtab
 - API snapshot повертає `{"count": N, "nodes": [...], "title": "...", "url": "..."}` (не `{"snapshot": "..."}`)
 - `DELETE /instances/<id>` повертає `405` якщо інстанс активний → тільки restart сервісу очищає
 - `mode: "head"` в config ігнорується PinchTab-ом — Chrome завжди стартує з `--headless=new`
+- `browser.extraFlags` не дозволяє `--no-sandbox`; для headless Alpine/OpenRC використовуйте `PINCHTAB_CHROME_NO_SANDBOX=1`
 - Обхід для видимого Chrome: wrapper-скрипт що видаляє `--headless` та `--ozone-platform=headless` флаги

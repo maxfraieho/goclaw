@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/store"
@@ -148,7 +149,7 @@ func (t *BrowserTool) Execute(ctx context.Context, args map[string]any) *tools.R
 	switch action {
 	case "open", "snapshot", "screenshot", "navigate", "act", "tabs":
 		if err := t.manager.Start(ctx); err != nil {
-			return tools.ErrorResult(fmt.Sprintf("failed to start browser: %v", err))
+			return tools.ErrorResult(formatBrowserStartError(err))
 		}
 	}
 
@@ -199,9 +200,33 @@ func (t *BrowserTool) handleStatus() *tools.Result {
 
 func (t *BrowserTool) handleStart(ctx context.Context) *tools.Result {
 	if err := t.manager.Start(ctx); err != nil {
-		return tools.ErrorResult(fmt.Sprintf("failed to start browser: %v", err))
+		return tools.ErrorResult(formatBrowserStartError(err))
 	}
 	return tools.NewResult("Browser started successfully.")
+}
+
+func formatBrowserStartError(err error) string {
+	msg := fmt.Sprintf("failed to start browser: %v", err)
+	if hint := browserStartHint(err); hint != "" {
+		msg += "\n\n[BROWSER] " + hint
+	}
+	return msg
+}
+
+func browserStartHint(err error) string {
+	if err == nil {
+		return ""
+	}
+	lower := strings.ToLower(err.Error())
+	if !strings.Contains(lower, "permission denied") &&
+		!strings.Contains(lower, "eacces") &&
+		!strings.Contains(lower, "operation not permitted") {
+		return ""
+	}
+	if strings.Contains(lower, "pinchtab") || strings.Contains(lower, "chrome") || strings.Contains(lower, "chromium") {
+		return "Chrome launch was denied by the host. For PinchTab on Alpine/OpenRC, start the daemon with PINCHTAB_CHROME_NO_SANDBOX=1. Also verify browser.binary or any wrapper script is executable and points to a readable Chrome/Chromium binary."
+	}
+	return "The browser process could not be launched by the host. Verify the configured browser binary exists and is executable."
 }
 
 func (t *BrowserTool) handleStop(ctx context.Context) *tools.Result {

@@ -290,7 +290,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (result *RunResult, 
 			callCtx = providers.WithReasoningDecision(callCtx, reasoningDecision)
 		}
 		llmSpanStart := time.Now().UTC()
-		llmSpanID := l.emitLLMSpanStart(callCtx, llmSpanStart, rs.iteration, messages, withModel(model), withProvider(provider.Name()))
+		llmSpanID := l.emitLLMSpanStart(callCtx, llmSpanStart, rs.iteration, messages, toolDefs, withModel(model), withProvider(provider.Name()))
 
 		if req.Stream {
 			resp, err = provider.ChatStream(callCtx, chatReq, func(chunk providers.StreamChunk) {

@@ -9,7 +9,7 @@
   "browser": {
     "version": "",
     "binary": "",
-    "extraFlags": "--disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-features=CalculateNativeWinOcclusion --disable-hang-monitor --disable-dev-shm-usage --no-first-run --no-default-browser-check",
+    "extraFlags": "--disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-features=CalculateNativeWinOcclusion --disable-hang-monitor --disable-dev-shm-usage --disable-gpu --no-first-run --no-default-browser-check",
     "extensionPaths": []
   },
   "instanceDefaults": {

@@ -63,7 +63,7 @@ func (l *Loop) resolveSpan(opts []spanOption) (string, string) {
 // emitLLMSpanStart emits a "running" LLM span before the LLM call begins.
 // Returns the span ID so the caller can later call emitLLMSpanEnd to finalize it.
 // Goroutine-safe: only reads immutable Loop fields and does a channel send.
-func (l *Loop) emitLLMSpanStart(ctx context.Context, start time.Time, iteration int, messages []providers.Message, opts ...spanOption) uuid.UUID {
+func (l *Loop) emitLLMSpanStart(ctx context.Context, start time.Time, iteration int, messages []providers.Message, toolDefs []providers.ToolDefinition, opts ...spanOption) uuid.UUID {
 	collector := tracing.CollectorFromContext(ctx)
 	traceID := tracing.TraceIDFromContext(ctx)
 	if collector == nil || traceID == uuid.Nil {
@@ -114,9 +114,44 @@ func (l *Loop) emitLLMSpanStart(ctx context.Context, start time.Time, iteration 
 			span.InputPreview = tracing.TruncateJSON(string(b), previewLimit)
 		}
 	}
+	if meta := llmSpanStartMetadata(toolDefs); len(meta) > 0 {
+		span.Metadata = meta
+	}
 
 	collector.EmitSpan(span)
 	return spanID
+}
+
+func llmSpanStartMetadata(toolDefs []providers.ToolDefinition) json.RawMessage {
+	if len(toolDefs) == 0 {
+		return nil
+	}
+
+	const maxToolNames = 12
+	toolNames := make([]string, 0, maxToolNames)
+	for _, td := range toolDefs {
+		if td.Function.Name == "" {
+			continue
+		}
+		if len(toolNames) >= maxToolNames {
+			break
+		}
+		toolNames = append(toolNames, td.Function.Name)
+	}
+
+	meta := map[string]any{
+		"tool_count": len(toolDefs),
+	}
+	if len(toolNames) > 0 {
+		meta["tool_names"] = toolNames
+	}
+	if len(toolDefs) > len(toolNames) {
+		meta["tool_names_truncated"] = true
+	}
+	if b, err := json.Marshal(meta); err == nil {
+		return b
+	}
+	return nil
 }
 
 // emitLLMSpanEnd finalizes a running LLM span with results.
