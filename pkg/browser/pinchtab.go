@@ -176,9 +176,9 @@ func (p *PinchTabManager) Stop(ctx context.Context) error {
 		return nil
 	}
 	// Best-effort stop; ignore errors (daemon stays alive)
-	_, _ = p.doDelete(ctx, "/instances/"+p.instanceID)
+	_ = p.stopInstanceLocked(ctx, p.instanceID)
 	if p.profileID != "" {
-		_, _ = p.doDelete(ctx, "/profiles/"+p.profileID)
+		_ = p.stopProfileLocked(ctx, p.profileID)
 	}
 	p.instanceID = ""
 	p.profileID = ""
@@ -514,6 +514,28 @@ func (p *PinchTabManager) doDelete(ctx context.Context, path string) ([]byte, er
 	return p.do(req)
 }
 
+func (p *PinchTabManager) stopInstanceLocked(ctx context.Context, id string) error {
+	if strings.TrimSpace(id) == "" {
+		return nil
+	}
+	_, err := p.doPost(ctx, "/instances/"+id+"/stop", map[string]any{})
+	if err != nil {
+		return fmt.Errorf("pinchtab stop instance %s: %w", id, err)
+	}
+	return nil
+}
+
+func (p *PinchTabManager) stopProfileLocked(ctx context.Context, id string) error {
+	if strings.TrimSpace(id) == "" {
+		return nil
+	}
+	_, err := p.doPost(ctx, "/profiles/"+id+"/stop", map[string]any{})
+	if err != nil {
+		return fmt.Errorf("pinchtab stop profile %s: %w", id, err)
+	}
+	return nil
+}
+
 func (p *PinchTabManager) do(req *http.Request) ([]byte, error) {
 	if p.token != "" {
 		req.Header.Set("Authorization", "Bearer "+p.token)
@@ -776,12 +798,12 @@ func (p *PinchTabManager) waitInstanceReadyLocked(ctx context.Context, id string
 
 func (p *PinchTabManager) cleanupBrokenStateLocked(ctx context.Context) {
 	if p.instanceID != "" {
-		if _, err := p.doDelete(ctx, "/instances/"+p.instanceID); err != nil {
+		if err := p.stopInstanceLocked(ctx, p.instanceID); err != nil {
 			p.logger.Warn("pinchtab: failed to delete broken instance", "instance", p.instanceID, "error", err)
 		}
 	}
 	if p.profileID != "" {
-		if _, err := p.doDelete(ctx, "/profiles/"+p.profileID); err != nil {
+		if err := p.stopProfileLocked(ctx, p.profileID); err != nil {
 			p.logger.Warn("pinchtab: failed to delete broken profile", "profile", p.profileID, "error", err)
 		}
 	}
