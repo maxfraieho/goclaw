@@ -27,6 +27,7 @@ type PinchTabManager struct {
 	baseURL    string // e.g. "http://localhost:9867"
 	token      string // Bearer token for Authorization header (optional)
 	client     *http.Client
+	actionTimeout time.Duration
 	profileID  string
 	instanceID string
 	logger     *slog.Logger
@@ -35,11 +36,15 @@ type PinchTabManager struct {
 // NewPinchTabManager creates a manager that delegates to a PinchTab server.
 // baseURL is the PinchTab server address, e.g. "http://localhost:9867".
 // token is an optional Bearer token for API authentication.
-func NewPinchTabManager(baseURL, token string) *PinchTabManager {
+func NewPinchTabManager(baseURL, token string, actionTimeout time.Duration) *PinchTabManager {
+	if actionTimeout <= 0 {
+		actionTimeout = 120 * time.Second
+	}
 	return &PinchTabManager{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		token:   token,
 		client:  &http.Client{Timeout: 30 * time.Second},
+		actionTimeout: actionTimeout,
 		logger:  slog.Default(),
 	}
 }
@@ -282,7 +287,7 @@ func (p *PinchTabManager) CloseTab(ctx context.Context, targetID string) error {
 
 // ActionTimeout returns the default per-action timeout for PinchTab operations.
 func (p *PinchTabManager) ActionTimeout() time.Duration {
-	return 30 * time.Second
+	return p.actionTimeout
 }
 
 // ConsoleMessages returns captured console messages for a tab.

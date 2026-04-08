@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestPinchTabStopUsesStopEndpoints(t *testing.T) {
@@ -21,7 +22,7 @@ func TestPinchTabStopUsesStopEndpoints(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewPinchTabManager(srv.URL, "")
+	p := NewPinchTabManager(srv.URL, "", 0)
 	p.instanceID = "inst_abc"
 	p.profileID = "prof_xyz"
 
@@ -59,7 +60,7 @@ func TestPinchTabCleanupBrokenStateUsesStopEndpoints(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewPinchTabManager(srv.URL, "")
+	p := NewPinchTabManager(srv.URL, "", 0)
 	p.instanceID = "inst_broken"
 	p.profileID = "prof_broken"
 
@@ -79,5 +80,17 @@ func TestPinchTabCleanupBrokenStateUsesStopEndpoints(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("request %d = %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+func TestPinchTabActionTimeoutConfigurable(t *testing.T) {
+	p := NewPinchTabManager("http://example.test", "", 90*time.Second)
+	if got := p.ActionTimeout(); got != 90*time.Second {
+		t.Fatalf("ActionTimeout() = %v, want %v", got, 90*time.Second)
+	}
+
+	p = NewPinchTabManager("http://example.test", "", 0)
+	if got := p.ActionTimeout(); got != 120*time.Second {
+		t.Fatalf("default ActionTimeout() = %v, want %v", got, 120*time.Second)
 	}
 }
