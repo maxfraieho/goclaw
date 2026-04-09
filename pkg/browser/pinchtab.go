@@ -293,7 +293,8 @@ func shouldFallbackOpen(err error, url string) bool {
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "deadline exceeded") ||
 		strings.Contains(msg, "client.timeout exceeded") ||
-		strings.Contains(msg, "awaiting headers")
+		strings.Contains(msg, "awaiting headers") ||
+		strings.Contains(msg, "eof")
 }
 
 func (p *PinchTabManager) openTabViaBlankLocked(ctx context.Context, url string) (*TabInfo, error) {

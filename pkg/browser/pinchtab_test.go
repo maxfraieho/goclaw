@@ -3,6 +3,7 @@ package browser
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -133,5 +134,11 @@ func TestPinchTabOpenTabFallsBackViaBlankNavigateOnTimeout(t *testing.T) {
 	}
 	if navigateCalls != 1 {
 		t.Fatalf("navigate calls = %d, want %d", navigateCalls, 1)
+	}
+}
+
+func TestShouldFallbackOpenOnEOF(t *testing.T) {
+	if !shouldFallbackOpen(errors.New("Post \"http://127.0.0.1:9867/instances/x/tabs/open\": EOF"), "https://www.ukr.net") {
+		t.Fatal("expected EOF to trigger fallback")
 	}
 }
