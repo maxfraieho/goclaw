@@ -43,7 +43,9 @@ func NewPinchTabManager(baseURL, token string, actionTimeout time.Duration) *Pin
 	return &PinchTabManager{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		token:   token,
-		client:  &http.Client{Timeout: 30 * time.Second},
+		// Let per-action contexts enforce deadlines. A fixed client timeout here
+		// would truncate heavier tab-open flows before the browser/tool timeout.
+		client:        &http.Client{},
 		actionTimeout: actionTimeout,
 		logger:  slog.Default(),
 	}
@@ -271,13 +273,42 @@ func (p *PinchTabManager) OpenTab(ctx context.Context, url string) (*TabInfo, er
 	}
 	data, err := p.doPost(ctx, "/instances/"+p.instanceID+"/tabs/open", map[string]any{"url": url})
 	if err != nil {
-		return nil, fmt.Errorf("pinchtab open tab: %w", err)
+		if !shouldFallbackOpen(err, url) {
+			return nil, fmt.Errorf("pinchtab open tab: %w", err)
+		}
+		p.logger.Warn("pinchtab: direct tab open timed out, retrying via blank tab navigate", "url", url, "error", err)
+		return p.openTabViaBlankLocked(ctx, url)
 	}
 	var resp ptTabOpenResp
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, fmt.Errorf("pinchtab tab open decode: %w", err)
 	}
 	return &TabInfo{TargetID: resp.TabID, URL: resp.URL, Title: resp.Title}, nil
+}
+
+func shouldFallbackOpen(err error, url string) bool {
+	if err == nil || url == "" || url == "about:blank" {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "deadline exceeded") ||
+		strings.Contains(msg, "client.timeout exceeded") ||
+		strings.Contains(msg, "awaiting headers")
+}
+
+func (p *PinchTabManager) openTabViaBlankLocked(ctx context.Context, url string) (*TabInfo, error) {
+	data, err := p.doPost(ctx, "/instances/"+p.instanceID+"/tabs/open", map[string]any{"url": "about:blank"})
+	if err != nil {
+		return nil, fmt.Errorf("pinchtab open blank tab fallback: %w", err)
+	}
+	var resp ptTabOpenResp
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("pinchtab blank tab decode: %w", err)
+	}
+	if _, err := p.doPost(ctx, "/tabs/"+resp.TabID+"/navigate", map[string]any{"url": url}); err != nil {
+		return nil, fmt.Errorf("pinchtab blank tab navigate fallback: %w", err)
+	}
+	return &TabInfo{TargetID: resp.TabID, URL: url, Title: resp.Title}, nil
 }
 
 func (p *PinchTabManager) CloseTab(ctx context.Context, targetID string) error {

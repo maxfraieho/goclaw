@@ -2,6 +2,7 @@ package browser
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -92,5 +93,45 @@ func TestPinchTabActionTimeoutConfigurable(t *testing.T) {
 	p = NewPinchTabManager("http://example.test", "", 0)
 	if got := p.ActionTimeout(); got != 120*time.Second {
 		t.Fatalf("default ActionTimeout() = %v, want %v", got, 120*time.Second)
+	}
+}
+
+func TestPinchTabOpenTabFallsBackViaBlankNavigateOnTimeout(t *testing.T) {
+	openCalls := 0
+	navigateCalls := 0
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/instances/inst-1/tabs/open":
+			openCalls++
+			if openCalls == 1 {
+				http.Error(w, "context deadline exceeded", http.StatusGatewayTimeout)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(ptTabOpenResp{TabID: "tab-1", URL: "about:blank", Title: "Blank"})
+		case r.Method == http.MethodPost && r.URL.Path == "/tabs/tab-1/navigate":
+			navigateCalls++
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	p := NewPinchTabManager(srv.URL, "", 90*time.Second)
+	p.instanceID = "inst-1"
+
+	tab, err := p.OpenTab(context.Background(), "https://www.ukr.net")
+	if err != nil {
+		t.Fatalf("OpenTab() error: %v", err)
+	}
+	if tab.TargetID != "tab-1" {
+		t.Fatalf("TargetID = %q, want %q", tab.TargetID, "tab-1")
+	}
+	if openCalls != 2 {
+		t.Fatalf("open calls = %d, want %d", openCalls, 2)
+	}
+	if navigateCalls != 1 {
+		t.Fatalf("navigate calls = %d, want %d", navigateCalls, 1)
 	}
 }
