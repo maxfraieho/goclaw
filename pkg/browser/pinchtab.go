@@ -27,6 +27,7 @@ type PinchTabManager struct {
 	baseURL    string // e.g. "http://localhost:9867"
 	token      string // Bearer token for Authorization header (optional)
 	client     *http.Client
+	actionTimeout time.Duration
 	profileID  string
 	instanceID string
 	logger     *slog.Logger
@@ -35,11 +36,17 @@ type PinchTabManager struct {
 // NewPinchTabManager creates a manager that delegates to a PinchTab server.
 // baseURL is the PinchTab server address, e.g. "http://localhost:9867".
 // token is an optional Bearer token for API authentication.
-func NewPinchTabManager(baseURL, token string) *PinchTabManager {
+func NewPinchTabManager(baseURL, token string, actionTimeout time.Duration) *PinchTabManager {
+	if actionTimeout <= 0 {
+		actionTimeout = 120 * time.Second
+	}
 	return &PinchTabManager{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		token:   token,
-		client:  &http.Client{Timeout: 30 * time.Second},
+		// Let per-action contexts enforce deadlines. A fixed client timeout here
+		// would truncate heavier tab-open flows before the browser/tool timeout.
+		client:        &http.Client{},
+		actionTimeout: actionTimeout,
 		logger:  slog.Default(),
 	}
 }
@@ -176,9 +183,9 @@ func (p *PinchTabManager) Stop(ctx context.Context) error {
 		return nil
 	}
 	// Best-effort stop; ignore errors (daemon stays alive)
-	_, _ = p.doDelete(ctx, "/instances/"+p.instanceID)
+	_ = p.stopInstanceLocked(ctx, p.instanceID)
 	if p.profileID != "" {
-		_, _ = p.doDelete(ctx, "/profiles/"+p.profileID)
+		_ = p.stopProfileLocked(ctx, p.profileID)
 	}
 	p.instanceID = ""
 	p.profileID = ""
@@ -266,13 +273,43 @@ func (p *PinchTabManager) OpenTab(ctx context.Context, url string) (*TabInfo, er
 	}
 	data, err := p.doPost(ctx, "/instances/"+p.instanceID+"/tabs/open", map[string]any{"url": url})
 	if err != nil {
-		return nil, fmt.Errorf("pinchtab open tab: %w", err)
+		if !shouldFallbackOpen(err, url) {
+			return nil, fmt.Errorf("pinchtab open tab: %w", err)
+		}
+		p.logger.Warn("pinchtab: direct tab open timed out, retrying via blank tab navigate", "url", url, "error", err)
+		return p.openTabViaBlankLocked(ctx, url)
 	}
 	var resp ptTabOpenResp
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, fmt.Errorf("pinchtab tab open decode: %w", err)
 	}
 	return &TabInfo{TargetID: resp.TabID, URL: resp.URL, Title: resp.Title}, nil
+}
+
+func shouldFallbackOpen(err error, url string) bool {
+	if err == nil || url == "" || url == "about:blank" {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "deadline exceeded") ||
+		strings.Contains(msg, "client.timeout exceeded") ||
+		strings.Contains(msg, "awaiting headers") ||
+		strings.Contains(msg, "eof")
+}
+
+func (p *PinchTabManager) openTabViaBlankLocked(ctx context.Context, url string) (*TabInfo, error) {
+	data, err := p.doPost(ctx, "/instances/"+p.instanceID+"/tabs/open", map[string]any{"url": "about:blank"})
+	if err != nil {
+		return nil, fmt.Errorf("pinchtab open blank tab fallback: %w", err)
+	}
+	var resp ptTabOpenResp
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("pinchtab blank tab decode: %w", err)
+	}
+	if _, err := p.doPost(ctx, "/tabs/"+resp.TabID+"/navigate", map[string]any{"url": url}); err != nil {
+		return nil, fmt.Errorf("pinchtab blank tab navigate fallback: %w", err)
+	}
+	return &TabInfo{TargetID: resp.TabID, URL: url, Title: resp.Title}, nil
 }
 
 func (p *PinchTabManager) CloseTab(ctx context.Context, targetID string) error {
@@ -282,7 +319,7 @@ func (p *PinchTabManager) CloseTab(ctx context.Context, targetID string) error {
 
 // ActionTimeout returns the default per-action timeout for PinchTab operations.
 func (p *PinchTabManager) ActionTimeout() time.Duration {
-	return 30 * time.Second
+	return p.actionTimeout
 }
 
 // ConsoleMessages returns captured console messages for a tab.
@@ -512,6 +549,28 @@ func (p *PinchTabManager) doDelete(ctx context.Context, path string) ([]byte, er
 		return nil, err
 	}
 	return p.do(req)
+}
+
+func (p *PinchTabManager) stopInstanceLocked(ctx context.Context, id string) error {
+	if strings.TrimSpace(id) == "" {
+		return nil
+	}
+	_, err := p.doPost(ctx, "/instances/"+id+"/stop", map[string]any{})
+	if err != nil {
+		return fmt.Errorf("pinchtab stop instance %s: %w", id, err)
+	}
+	return nil
+}
+
+func (p *PinchTabManager) stopProfileLocked(ctx context.Context, id string) error {
+	if strings.TrimSpace(id) == "" {
+		return nil
+	}
+	_, err := p.doPost(ctx, "/profiles/"+id+"/stop", map[string]any{})
+	if err != nil {
+		return fmt.Errorf("pinchtab stop profile %s: %w", id, err)
+	}
+	return nil
 }
 
 func (p *PinchTabManager) do(req *http.Request) ([]byte, error) {
@@ -776,12 +835,12 @@ func (p *PinchTabManager) waitInstanceReadyLocked(ctx context.Context, id string
 
 func (p *PinchTabManager) cleanupBrokenStateLocked(ctx context.Context) {
 	if p.instanceID != "" {
-		if _, err := p.doDelete(ctx, "/instances/"+p.instanceID); err != nil {
+		if err := p.stopInstanceLocked(ctx, p.instanceID); err != nil {
 			p.logger.Warn("pinchtab: failed to delete broken instance", "instance", p.instanceID, "error", err)
 		}
 	}
 	if p.profileID != "" {
-		if _, err := p.doDelete(ctx, "/profiles/"+p.profileID); err != nil {
+		if err := p.stopProfileLocked(ctx, p.profileID); err != nil {
 			p.logger.Warn("pinchtab: failed to delete broken profile", "profile", p.profileID, "error", err)
 		}
 	}

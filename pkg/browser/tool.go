@@ -158,7 +158,10 @@ func (t *BrowserTool) Execute(ctx context.Context, args map[string]any) *tools.R
 	case "open", "navigate", "snapshot", "screenshot", "act":
 		timeout := t.manager.ActionTimeout()
 		if ms, ok := args["timeoutMs"].(float64); ok && ms > 0 {
-			timeout = time.Duration(ms) * time.Millisecond
+			requested := time.Duration(ms) * time.Millisecond
+			if requested > timeout {
+				timeout = requested
+			}
 		}
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
