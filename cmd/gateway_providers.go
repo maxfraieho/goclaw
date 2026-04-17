@@ -41,7 +41,9 @@ func registerProviders(registry *providers.Registry, cfg *config.Config) {
 	}
 
 	if cfg.Providers.OpenRouter.APIKey != "" {
-		registry.Register(providers.NewOpenAIProvider("openrouter", cfg.Providers.OpenRouter.APIKey, "https://openrouter.ai/api/v1", "anthropic/claude-sonnet-4-5-20250929"))
+		orProv := providers.NewOpenAIProvider("openrouter", cfg.Providers.OpenRouter.APIKey, "https://openrouter.ai/api/v1", "anthropic/claude-sonnet-4-5-20250929")
+		orProv.WithSiteInfo("https://goclaw.sh", "GoClaw")
+		registry.Register(orProv)
 		slog.Info("registered provider", "name", "openrouter")
 	}
 
@@ -292,6 +294,7 @@ func registerProvidersFromDB(registry *providers.Registry, provStore store.Provi
 				continue
 			}
 			var cliOpts []providers.ClaudeCLIOption
+			cliOpts = append(cliOpts, providers.WithClaudeCLIName(p.Name))
 			cliOpts = append(cliOpts, providers.WithClaudeCLISecurityHooks("", true))
 			if gatewayAddr != "" {
 				mcpData := providers.BuildCLIMCPConfigData(nil, gatewayAddr, gatewayToken)
@@ -340,6 +343,7 @@ func registerProvidersFromDB(registry *providers.Registry, provStore store.Provi
 			registry.RegisterForTenant(p.TenantID, codex)
 		case store.ProviderAnthropicNative:
 			registry.RegisterForTenant(p.TenantID, providers.NewAnthropicProvider(apiKey,
+				providers.WithAnthropicName(p.Name),
 				providers.WithAnthropicBaseURL(p.APIBase)))
 		case store.ProviderDashScope:
 			registry.RegisterForTenant(p.TenantID, providers.NewDashScopeProvider(p.Name, apiKey, p.APIBase, ""))
@@ -404,6 +408,9 @@ func registerProvidersFromDB(registry *providers.Registry, provStore store.Provi
 			prov.WithProviderType(p.ProviderType)
 			if p.ProviderType == store.ProviderMiniMax {
 				prov.WithChatPath("/text/chatcompletion_v2")
+			}
+			if p.ProviderType == store.ProviderOpenRouter {
+				prov.WithSiteInfo("https://goclaw.sh", "GoClaw")
 			}
 			registry.RegisterForTenant(p.TenantID, prov)
 		}
@@ -479,6 +486,7 @@ func registerACPFromDB(registry *providers.Registry, p store.LLMProviderData) {
 	}
 	registry.RegisterForTenant(p.TenantID, providers.NewACPProvider(
 		binary, settings.Args, workDir, idleTTL, tools.DefaultDenyPatterns(),
+		providers.WithACPName(p.Name),
 		providers.WithACPModel(p.Name),
 	))
 	slog.Info("registered provider from DB", "name", p.Name, "type", "acp")
