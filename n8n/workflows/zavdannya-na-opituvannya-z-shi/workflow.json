@@ -1,0 +1,1592 @@
+{
+  "source_workflow_id": "c4gZHN2sl3UMvkTs",
+  "source_name": "завдання на опитування  з ШІ",
+  "exported_at": "2026-04-18T02:38:59.444Z",
+  "workflow": {
+    "updatedAt": "2026-04-18T02:38:59.444Z",
+    "createdAt": "2026-04-10T03:30:56.900Z",
+    "id": "c4gZHN2sl3UMvkTs",
+    "name": "завдання на опитування  з ШІ",
+    "description": "NEW production path. Account-aware routing: Arsen -> Mac primary with Alpine fallback; Olena -> Alpine only with Swiss VPN gating and Telegram alert on block/failure.",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "pollTimes": {
+            "item": [
+              {
+                "mode": "everyX",
+                "unit": "minutes"
+              }
+            ]
+          },
+          "simple": false,
+          "filters": {
+            "includeDrafts": false,
+            "sender": "no-reply@meinungsplatz.ch"
+          },
+          "options": {}
+        },
+        "id": "f4f2d391-500d-48bc-afb7-98a1ae7ecbc7",
+        "name": "Gmail Task Monitor",
+        "type": "n8n-nodes-base.gmailTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          -688,
+          160
+        ],
+        "credentials": {
+          "gmailOAuth2": {
+            "id": "qRAmD4Td3GlZTtF5",
+            "name": "Gmail account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const data = $json || {};\n\nconst asString = (value) => {\n  if (value === null || value === undefined) return '';\n  if (typeof value === 'string') return value;\n  try {\n    return JSON.stringify(value);\n  } catch {\n    return String(value);\n  }\n};\n\nconst htmlToText = (html) => asString(html)\n  .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n  .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n  .replace(/<[^>]+>/g, ' ')\n  .replace(/&nbsp;/gi, ' ')\n  .replace(/&amp;/gi, '&')\n  .replace(/&quot;/gi, '\"')\n  .replace(/&#39;/gi, \"'\")\n  .replace(/\\s+/g, ' ')\n  .trim();\n\nconst extractAddress = (value) => {\n  if (!value) return '';\n  if (typeof value === 'string') {\n    const match = value.match(/<?([A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,})>?/i);\n    return match ? match[1].toLowerCase() : value.trim().toLowerCase();\n  }\n  if (Array.isArray(value)) {\n    for (const item of value) {\n      const found = extractAddress(item);\n      if (found) return found;\n    }\n    return '';\n  }\n  if (typeof value === 'object') {\n    if (typeof value.address === 'string') return value.address.trim().toLowerCase();\n    if (Array.isArray(value.value)) {\n      for (const item of value.value) {\n        const found = extractAddress(item);\n        if (found) return found;\n      }\n    }\n    if (typeof value.text === 'string') {\n      const found = extractAddress(value.text);\n      if (found) return found;\n    }\n  }\n  return '';\n};\n\nconst formatAddress = (value) => {\n  if (!value) return '';\n  if (typeof value === 'string') return value.trim();\n  if (Array.isArray(value)) {\n    const items = value.map((item) => formatAddress(item)).filter(Boolean);\n    return items.join(', ');\n  }\n  if (typeof value === 'object') {\n    if (Array.isArray(value.value) && value.value.length > 0) {\n      const first = value.value[0] || {};\n      const name = asString(first.name).trim();\n      const address = asString(first.address).trim();\n      if (name && address) return `${name} <${address}>`;\n      return name || address || asString(value.text).trim();\n    }\n    if (typeof value.text === 'string') return value.text.trim();\n    const name = asString(value.name).trim();\n    const address = asString(value.address).trim();\n    if (name && address) return `${name} <${address}>`;\n    return name || address;\n  }\n  return asString(value).trim();\n};\n\nconst subject = asString(data.subject).trim();\nconst text = asString(data.text).replace(/\\u00a0/g, ' ').trim();\nconst html = asString(data.html);\nconst htmlText = htmlToText(html);\nconst fromDisplay = formatAddress(data.from) || formatAddress(data.sender) || formatAddress(data.replyTo) || 'невідомо';\nconst fromEmail = extractAddress(data.from) || extractAddress(data.sender) || extractAddress(data.replyTo);\nconst toDisplay = formatAddress(data.to) || formatAddress(data.deliveredTo);\nconst toRaw = `${asString(data.to)} ${asString(data.deliveredTo)}`.trim();\nconst combined = [subject, text, htmlText].filter(Boolean).join('\\n');\n\nconst recipientEmail =\n /lekov00@gmail\\.com/i.test(toRaw) ? 'lekov00@gmail.com' :\n /arsen\\.k111999@gmail\\.com/i.test(toRaw) ? 'arsen.k111999@gmail.com' :\n /tukroschu@gmail\\.com/i.test(toRaw) ? 'tukroschu@gmail.com' :\n '';\n\nconst accountName =\n recipientEmail === 'lekov00@gmail.com' ? 'Олени' :\n (recipientEmail === 'arsen.k111999@gmail.com' || recipientEmail === 'tukroschu@gmail.com') ? 'Арсена' :\n 'невідомого';\n\nconst routeMode = recipientEmail === 'lekov00@gmail.com' ? 'alpine_vpn_only' : 'mac_primary';\nconst targetGoClawModel = recipientEmail === 'lekov00@gmail.com' ? 'goclaw:surveys-olena' : 'goclaw:surveys-arsen';\nconst allowMacOpen = routeMode !== 'alpine_vpn_only';\nconst allowAlpineExecution = routeMode === 'alpine_vpn_only';\nconst trustedSender = fromEmail === 'no-reply@meinungsplatz.ch';\nconst senderAllowed = trustedSender;\nconst workflowMarker = asString(data.workflowMarker || data.debugMarker).trim();\nconst primaryBaseUrl = asString(data.primaryBaseUrl).trim() || process.env.SURVEYS_GCLAW_PRIMARY_BASE_URL || 'http://100.84.163.96:18790';\nconst fallbackBaseUrl = asString(data.fallbackBaseUrl).trim() || process.env.SURVEYS_GCLAW_FALLBACK_BASE_URL || 'http://100.113.140.25:18790';\nconst vpnCountryRequired = 'CH';\nconst vpnCountryOverride = asString(data.vpnCountryOverride || data.alpineVpnCountryOverride).trim().toUpperCase();\nconst hrefLinks = [...html.matchAll(/href=[\"']([^\"'#]+)[\"']/gi)].map((m) => m[1]);\nconst rawLinks = [...(`${text}\\n${html}`).matchAll(/https?:\\/\\/[^\\s<>\"')\\]]+/gi)].map((m) => m[0]);\nconst cleanLink = (url) => asString(url).trim().replace(/[),.;]+$/g, '').replace(/&amp;/g, '&');\nconst uniqueLinks = [...new Set([...hrefLinks, ...rawLinks].map(cleanLink).filter(Boolean))];\n\nconst scoreLink = (url) => {\n  const u = url.toLowerCase();\n  let score = 0;\n  if (/meinungsplatz|survey|sondage|enquete|questionnaire|poll|study|task|invite|invitation|continue|start|befrag|umfrage/.test(u)) score += 6;\n  if (/token=|auth=|session=|survey=|questionnaire=|invite=|invitation=/.test(u)) score += 3;\n  if (/unsubscribe|privacy|impress|contact|help|support|facebook|instagram|linkedin|twitter|x\\.com|beehiiv/.test(u)) score -= 10;\n  if (/https?:\\/\\//.test(u)) score += 1;\n  return score;\n};\n\nconst sortedLinks = uniqueLinks\n  .map((url) => ({ url, score: scoreLink(url) }))\n  .sort((a, b) => b.score - a.score);\n\nconst topLink = sortedLinks.length ? sortedLinks[0] : null;\nconst taskLink = topLink && topLink.score >= 4 ? topLink.url : null;\nconst rewardMatch =\n  combined.match(/\\b(\\d+(?:[.,]\\d{1,2})?)\\s*CHF\\b/i) ||\n  combined.match(/\\bCHF\\s*(\\d+(?:[.,]\\d{1,2})?)\\b/i);\nconst readTimeMatch = combined.match(/\\b(\\d{1,3})\\s*(?:min|mins|minutes?|minute|mn)\\s+read\\b/i);\nconst durationMatch = readTimeMatch ? null : combined.match(/\\b(\\d{1,3})(?:\\s*[-–]\\s*\\d{1,3})?\\s*(?:min|mins|minutes?|minute|mn)\\b/i);\nconst securitySubject = /\\b(connexion inhabituelle|unusual login|unusual sign-?in|login attempt|security alert|code de connexion|code de verification|mot de passe|password reset|verify your account|v[eé]rification)\\b/i.test(subject);\n\nconst keywordTests = [\n  { name: 'survey', regex: /\\b(sondage|enqu[eê]te|survey|poll|questionnaire|umfrage|befragung)\\b/i },\n  { name: 'opinion', regex: /\\b(votre avis compte|your opinion|avis|opinion)\\b/i },\n  { name: 'reward', regex: /\\b(chf|récompense|reward|vergütung|bonus)\\b/i },\n  { name: 'duration', regex: /\\b(min|minutes?|minute)\\b/i, disabled: Boolean(readTimeMatch) },\n  { name: 'invite', regex: /\\b(invitation|invite|invited|einladung)\\b/i },\n  { name: 'start', regex: /\\b(commencer|start|continue|participer|teilnehmen)\\b/i },\n];\n\nconst matchedKeywords = keywordTests\n  .filter((k) => !k.disabled && k.regex.test(combined))\n  .map((k) => k.name);\nconst highIntentKeywordCount = matchedKeywords.filter((name) => ['survey', 'opinion', 'invite', 'start'].includes(name)).length;\n\nlet score = 0;\nif (trustedSender) score += 5;\nif (taskLink) score += 4;\nif (rewardMatch) score += 3;\nif (durationMatch) score += 2;\nscore += Math.min(matchedKeywords.length, 4);\n\nlet classification = 'ignore';\nif (senderAllowed && (trustedSender || rewardMatch || durationMatch || highIntentKeywordCount >= 2 || (taskLink && highIntentKeywordCount >= 1))) {\n  classification = 'unclear_review';\n}\nif (senderAllowed && taskLink && (rewardMatch || durationMatch || highIntentKeywordCount >= 2)) {\n  classification = 'likely_task';\n} else if (senderAllowed && ((rewardMatch && durationMatch) || (trustedSender && highIntentKeywordCount >= 1))) {\n  classification = 'likely_task';\n}\nif (securitySubject) {\n  classification = 'ignore';\n  score = 0;\n}\n\n// --- Meinungsplatz autorun whitelist (explicit signal to agent) ---\nconst meinungsplatzSender = /meinungsplatz\\.ch/i.test(fromEmail || '') || /meinungsplatz\\.ch|espacedopinion/i.test(fromDisplay || '');\nconst meinungsplatzLink = taskLink ? /meinungsplatz\\.ch\\/m3click/i.test(taskLink) : false;\nconst rewardPresent = Boolean(rewardMatch);\nconst durationPresent = Boolean(durationMatch) || Boolean(readTimeMatch);\nconst accountMapped = accountName === 'Арсена' || accountName === 'Олени';\nconst meinungsplatzAutorun = !securitySubject && meinungsplatzSender && meinungsplatzLink && rewardPresent && durationPresent && accountMapped;\nlet taskConfirmed = false;\nlet autoExecute = false;\nlet whitelistMatch = '';\nif (meinungsplatzAutorun) {\n  classification = 'likely_task';\n  taskConfirmed = true;\n  autoExecute = true;\n  whitelistMatch = 'meinungsplatz_autorun';\n}\n\nconst shouldInvokeAgent = senderAllowed && classification !== 'ignore';\nconst reward = rewardMatch ? rewardMatch[1].replace(',', '.') + ' CHF' : 'невідомо';\nconst duration = durationMatch ? durationMatch[1] + ' min' : 'невідомо';\nconst excerptSource = htmlText || text || subject || '';\nconst excerpt = excerptSource.replace(/\\s+/g, ' ').trim().slice(0, 1200);\nconst requestedAction = taskLink ? 'open_task_to_handoff' : 'review_email_only';\n\nconst sharedPromptParts = [\n  'Return strict JSON only. No markdown.',\n  'Required JSON schema:',\n  '{\"status\":\"completed|screened_out|failed|vpn_failed|needs_manual_review|not_a_task|task_unavailable|agent_error\",\"taskConfirmed\":true,\"openedTask\":false,\"taskLink\":\"\",\"currentUrl\":\"\",\"pageTitle\":\"\",\"reward\":\"\",\"duration\":\"\",\"portalMismatch\":null,\"reason\":\"\",\"nextAction\":\"\",\"confidence\":0.0}',\n  'Context:',\n  `requested_action: ${requestedAction}`,\n  `classification: ${classification}`,\n  `account: ${accountName}`,\n `recipient_email: ${recipientEmail || 'unknown'}`,\n `route_mode: ${routeMode}`,\n `target_agent: ${targetGoClawModel}`,\n  `allow_mac_open: ${allowMacOpen}`,\n  `allow_alpine_execution: ${allowAlpineExecution}`,\n  `vpn_country_required: ${vpnCountryRequired}`,\n  `vpn_country_override: ${vpnCountryOverride || ''}`,\n  `from: ${fromDisplay || 'невідомо'}`,\n  `from_email: ${fromEmail || ''}`,\n  `trusted_sender: ${trustedSender}`,\n  `to: ${toDisplay || 'невідомо'}`,\n  `subject: ${subject || 'без теми'}`,\n  `reward: ${reward}`,\n  `duration: ${duration}`,\n  `taskLink: ${taskLink || ''}`,\n  `candidateLinks: ${sortedLinks.slice(0, 10).map((x) => `${x.url} [score=${x.score}]`).join(', ')}`,\n  `matchedKeywords: ${matchedKeywords.join(', ')}`,\n  `task_confirmed: ${taskConfirmed}`,\n  `auto_execute: ${autoExecute}`,\n  `whitelist_match: ${whitelistMatch || 'none'}`,\n  'email_excerpt_start',\n  excerpt,\n  'email_excerpt_end',\n];\n\nconst primaryInstructions = [\n  'You are the Mac primary surveys EXECUTION agent. Execute the survey FULLY and autonomously using your workspace profile.',\n  'MANDATORY AUTORUN: If auto_execute is true in the Context below, you MUST execute the survey end-to-end. You MUST NOT return status=\"needs_manual_review\". Acceptable statuses for whitelisted autorun: completed | screened_out | task_unavailable | vpn_failed | failed | not_a_task (only if the link clearly points to non-survey content).',\n  'Read your AGENTS.md and SOUL.md from your workspace first to load the Arno Dubois profile.',\n  'EXECUTION STEPS:',\n  '1. If route_mode is alpine_vpn_only or allow_mac_open is false: do not open any browser. Return openedTask=false explaining this recipient must run on Alpine only.',\n  '2. If taskLink is empty: return needs_manual_review.',\n  '3. Verify Swiss egress: run `curl -s https://ipinfo.io/country` — result must be exactly CH. Mac is physically in Switzerland, direct connection, no SOCKS5.',\n  '   If result is not CH: return openedTask=false with reason vpn_failed.',\n  '4. Open the taskLink via the browser tool.',\n  '5. Complete ALL survey pages using the Arno Dubois profile from your workspace:',\n  '   - Age 25, Gland 1196, sales, CHF 6001-8000, Tesla, Helvetia/Allianz+Helsana, UBS/BCV',\n  '   - FINANCIAL INDEPENDENCE: ALWAYS answer \"Je paie moi-meme\" for payment questions',\n  '   - Scores: 7-8 out of 10',\n  '6. CRITICAL: NEVER combine answer selection AND pressing Continuer/Next/Submit in the same browser action. One action at a time.',\n  '7. Continue through ALL pages until the FINAL thank-you page or screened-out page.',\n  '8. After completing or being screened out, return strict JSON with actual outcome.',\n].join('\\n');\n\nconst fallbackInstructionsForOlena = [\n  'You are the Alpine surveys EXECUTION agent (Olena / Annet Buonassie). Execute the survey FULLY and autonomously using your workspace profile.',\n  'MANDATORY AUTORUN: If auto_execute is true in the Context below, you MUST execute the survey end-to-end. You MUST NOT return status=\"needs_manual_review\". Acceptable statuses for whitelisted autorun: completed | screened_out | task_unavailable | vpn_failed | failed | not_a_task (only if the link clearly points to non-survey content).',\n  'Read your AGENTS.md and SOUL.md from the surveys-olena workspace first to load the Annet Buonassie profile.',\n  'EXECUTION STEPS:',\n  '1. Verify Swiss egress via SOCKS5: run `curl -s --socks5-hostname 100.100.74.9:9888 https://ipinfo.io/country`',\n  '   OR if vpn_country_override is present, use it as the diagnostic result.',\n  '   If result is not CH: return openedTask=false with reason vpn_failed — Swiss VPN is not active.',\n  '2. Open the taskLink via the browser tool using Swiss SOCKS5 proxy (100.100.74.9:9888).',\n  '3. Complete ALL survey pages using the Annet Buonassie profile from your workspace:',\n  '   - Age 52, Gland 1196, sales, CHF 6001-8000, Tesla, la Mubilière+Helsana, Salt, Revolut',\n  '   - Scores: 7 out of 10, Agreement: Oui, plutôt d\\'accord',\n  '4. CRITICAL: NEVER combine answer selection AND pressing Continuer/Next in the same browser action. One action at a time.',\n  '5. Continue through ALL pages until the FINAL thank-you page or screened-out page.',\n  '6. After completing or being screened out, run the result pipeline:',\n  '   source ~/.goclaw/surveys/.env && ~/.goclaw/surveys/scripts/run_survey_result.sh olena alpine',\n  '7. Return strict JSON with actual outcome.',\n].join('\\n');\n\nconst fallbackInstructionsForArsen = [\n  'You are the Alpine FALLBACK surveys EXECUTION agent for Arsen (Arno Dubois). Mac primary is unavailable. Execute the survey FULLY and autonomously using your workspace profile.',\n  'MANDATORY AUTORUN: If auto_execute is true in the Context below, you MUST execute the survey end-to-end. You MUST NOT return status=\"needs_manual_review\". Acceptable statuses for whitelisted autorun: completed | screened_out | task_unavailable | vpn_failed | failed | not_a_task (only if the link clearly points to non-survey content).',\n  'Read your AGENTS.md and SOUL.md from the surveys-arsen workspace first to load the Arno Dubois profile.',\n  'EXECUTION STEPS:',\n  '1. Verify Swiss egress via SOCKS5: run `curl -s --socks5-hostname 100.100.74.9:9888 https://ipinfo.io/country`',\n  '   OR if vpn_country_override is present, use it as the diagnostic result.',\n  '   If result is not CH: return openedTask=false with reason vpn_failed — Swiss VPN is not active.',\n  '2. Open the taskLink via the browser tool using Swiss SOCKS5 proxy (100.100.74.9:9888).',\n  '3. Complete ALL survey pages using the Arno Dubois profile from your workspace:',\n  '   - Age 25, Gland 1196, sales, CHF 6001-8000, Tesla, Helvetia/Allianz+Helsana, UBS/BCV',\n  '   - FINANCIAL INDEPENDENCE: ALWAYS answer \"Je paie moi-meme\" for payment questions',\n  '   - Scores: 7-8 out of 10',\n  '4. CRITICAL: NEVER combine answer selection AND pressing Continuer/Next in the same browser action. One action at a time.',\n  '5. Continue through ALL pages until the FINAL thank-you page or screened-out page.',\n  '6. After completing or being screened out, run the result pipeline:',\n  '   source ~/.goclaw/surveys/.env && ~/.goclaw/surveys/scripts/run_survey_result.sh arsen alpine',\n  '7. Return strict JSON with actual outcome.',\n].join('\\n');\n\nconst fallbackInstructions = routeMode === 'alpine_vpn_only'\n  ? fallbackInstructionsForOlena\n  : fallbackInstructionsForArsen;\n\nconst buildMessage = (header, instructions) => [header, instructions, ...sharedPromptParts].join('\\n\\n');\n\nconst primaryGoclawRequestBody = {\n model: targetGoClawModel,\n  messages: [\n    {\n      role: 'user',\n      content: buildMessage('Primary host: Mac.', primaryInstructions),\n    },\n  ],\n};\n\nconst fallbackGoclawRequestBody = {\n model: targetGoClawModel,\n  messages: [\n    {\n      role: 'user',\n      content: buildMessage(routeMode === 'alpine_vpn_only' ? 'Execution host: Alpine Swiss-VPN route required.' : 'Fallback host: Alpine.', fallbackInstructions),\n    },\n  ],\n};\n\nreturn {\n  json: {\n    ...data,\n    accountName,\n    recipientEmail,\n    routeMode,\n    allowMacOpen,\n    allowAlpineExecution,\n    vpnCountryRequired,\n    vpnCountryOverride,\n    trustedSender,\n    senderAllowed,\n    fromDisplay,\n    fromEmail,\n    toDisplay,\n    classification,\n    shouldInvokeAgent,\n    score,\n    reward,\n    duration,\n    matchedKeywords,\n    taskLink,\n    taskLinkCandidates: sortedLinks.slice(0, 10),\n    emailExcerpt: excerpt,\n    requestedAction,\n    workflowMarker,\n    primaryBaseUrl,\n    fallbackBaseUrl,\n    primaryGoclawRequestBody,\n    fallbackGoclawRequestBody,\n    taskConfirmed,\n    autoExecute,\n    whitelistMatch,\n    meinungsplatzAutorun,\n  },\n};\n"
+        },
+        "id": "240e7c46-53dd-4d0e-9dba-47f1dd8d504c",
+        "name": "Analyze Email + Extract Link",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -464,
+          160
+        ]
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "surveys-e2e-test",
+          "options": {
+            "responseCode": {
+              "values": {}
+            },
+            "responseData": "accepted"
+          }
+        },
+        "id": "d37b50c2-2f2b-4b95-838a-fb98297b2fa2",
+        "name": "E2E Test Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          -704,
+          -512
+        ],
+        "webhookId": "f38f81ad-fbd5-4a99-ba15-7c10f8e76c33"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const body = $json.body || {};\nreturn { json: { ...body } };"
+        },
+        "id": "7946638a-9514-4310-bfd5-f667edaa97cb",
+        "name": "Normalize Test Payload",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -400,
+          -144
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "74cef22f-1d80-4b4d-895e-dd2c471d0841",
+                "leftValue": "={{ $json[\"shouldInvokeAgent\"] }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "ea085518-b058-49f8-8000-9826d61474de",
+        "name": "Should Invoke GoClaw?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -224,
+          160
+        ]
+      },
+      {
+        "parameters": {
+          "chatId": "={{ $env.SURVEYS_TELEGRAM_CHAT_ID || '-4964233423' }}",
+          "text": "={{ $json[\"workflowMarker\"] ? ('NEW-WF PREALERT ' + $json[\"workflowMarker\"]) : $json[\"agentPreAlertText\"] }}",
+          "additionalFields": {
+            "appendAttribution": false,
+            "disable_web_page_preview": true,
+            "parse_mode": "HTML"
+          }
+        },
+        "id": "2b515040-ff2c-470a-b4ad-55000f38f7d2",
+        "name": "Telegram Pre-Alert",
+        "type": "n8n-nodes-base.telegram",
+        "typeVersion": 1.2,
+        "position": [
+          0,
+          0
+        ],
+        "webhookId": "344cb592-52ce-48e8-93db-7ade48a16b8f",
+        "credentials": {
+          "telegramApi": {
+            "id": "kvnsgPyqexz5KHTc",
+            "name": "Telegram account"
+          }
+        },
+        "disabled": true,
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "c95585f1-68b1-4ba4-8c7f-6410e95f37bd",
+                "leftValue": "={{ $json[\"routeMode\"] }}",
+                "rightValue": "alpine_vpn_only",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "f60968e4-452f-4578-a723-2f7bc1d91282",
+        "name": "Route To Alpine Only?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          0,
+          160
+        ]
+      },
+      {
+        "parameters": {
+          "url": "={{ (($json['fallbackBaseUrl'] || $('Analyze Email + Extract Link').itemMatching(0).json['fallbackBaseUrl']) || ($env.SURVEYS_GCLAW_FALLBACK_BASE_URL || 'http://100.113.140.25:18790')) + '/v1/agents' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer ={{ $env.SURVEYS_GCLAW_FALLBACK_TOKEN || $env.GOCLAW_GATEWAY_TOKEN }}"
+              },
+              {
+                "name": "X-GoClaw-User-Id",
+                "value": "system"
+              },
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 30000
+          }
+        },
+        "id": "adf3a939-a03b-4edf-b667-a25ee5bfe417",
+        "name": "List Fallback GoClaw Agents",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          880,
+          288
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const source = $('Analyze Email + Extract Link').itemMatching(0).json;\nconst resp = $json || {};\n\nconst asText = (value) => {\n  if (!value) return '';\n  if (typeof value === 'string') return value;\n  if (typeof value.message === 'string') return value.message;\n  if (typeof value.description === 'string') return value.description;\n  try { return JSON.stringify(value); } catch { return String(value); }\n};\n\nconst items = Array.isArray(resp.data)\n  ? resp.data\n  : Array.isArray(resp.agents)\n    ? resp.agents\n    : Array.isArray(resp.body?.data)\n      ? resp.body.data\n      : Array.isArray(resp.body?.agents)\n        ? resp.body.agents\n        : [];\n\nconst surveysAgent = items.find((agent) => {\n  if (!agent || typeof agent !== 'object') return false;\n  const id = String(agent.id || '').toLowerCase();\n  const slug = String(agent.slug || '').toLowerCase();\n  const name = String(agent.name || '').toLowerCase();\n  const agentKey = String(agent.agent_key || '').toLowerCase();\n  const displayName = String(agent.display_name || '').toLowerCase();\n  const model = String(agent.model || '').toLowerCase();\n  return id === 'surveys' || slug === 'surveys' || name === 'surveys' || agentKey === 'surveys' || displayName === 'surveys' || model === 'goclaw:surveys';\n});\n\nconst fallbackAvailable = Boolean(surveysAgent);\nconst failureReason = fallbackAvailable\n  ? ''\n  : asText(resp.error) || asText(resp.body?.error) || asText(resp.message) || 'Alpine GoClaw did not return a surveys agent.';\nconst executionHostLabel = source.routeMode === 'alpine_vpn_only' ? 'Alpine Swiss-VPN primary' : 'Alpine fallback';\n\nconst noAgentTelegramText = [\n  source.routeMode === 'alpine_vpn_only'\n    ? '⚠️ Alpine Swiss-VPN path не готовий до запуску surveys для цього recipient.'\n    : '⚠️ Ні primary, ні fallback GoClaw не готові до запуску surveys.',\n  `👤 Для: ${source.accountName || 'невідомо'}`,\n  `📨 Тема: ${source.subject || 'без теми'}`,\n  `🔗 Candidate link: ${source.taskLink || 'не знайдено'}`,\n  source.routeMode === 'alpine_vpn_only'\n    ? `🧯 Alpine reason: ${failureReason || 'surveys agent missing on Alpine'}`\n    : `🖥 Primary reason: ${source.primaryFailureReason || 'primary unavailable'}`,\n  source.routeMode === 'alpine_vpn_only'\n    ? '👉 Що зробити: перевірити Swiss VPN route на Alpine. Mac не повинен відкривати цю задачу.'\n    : `🧯 Fallback reason: ${failureReason || 'surveys agent missing on Alpine'}`,\n].join('\\n');\n\nreturn {\n  json: {\n    ...source,\n    fallbackAgentsResponseRaw: resp,\n    executionHost: 'alpine',\n    executionHostLabel,\n    selectedGoClawAgent: surveysAgent?.id || 'surveys',\n    fallbackAvailable,\n    fallbackFailureReason: failureReason,\n    goclawRunnableRequestBody: source.fallbackGoclawRequestBody,\n    noAgentTelegramText,\n  },\n};\n"
+        },
+        "id": "7fdbde44-fcc9-494f-a498-df1edc5d8976",
+        "name": "Prepare Fallback GoClaw Request",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1104,
+          288
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "0d5ea2e3-48c3-4a2a-bef0-e3d7fe96dc55",
+                "leftValue": "={{ $json[\"fallbackAvailable\"] }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "6a70ea9a-d7ba-4207-8ae7-c1f4f28f9bbe",
+        "name": "Fallback GoClaw Available?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          1328,
+          288
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ ($json['fallbackBaseUrl'] || ($env.SURVEYS_GCLAW_FALLBACK_BASE_URL || 'http://100.113.140.25:18790')) + '/v1/responses' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer ={{ $env.SURVEYS_GCLAW_FALLBACK_TOKEN || $env.GOCLAW_GATEWAY_TOKEN }}"
+              },
+              {
+                "name": "X-GoClaw-User-Id",
+                "value": "system"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json[\"goclawRunnableRequestBody\"] }}",
+          "options": {
+            "timeout": 600000
+          }
+        },
+        "id": "fc4279d3-95a4-488a-bcd9-2e4a411a8811",
+        "name": "Fallback GoClaw Responses API",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1552,
+          224
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const source = $('Analyze Email + Extract Link').itemMatching(0).json;\nconst resp = $json || {};\n\nconst pickRawText = (obj) => {\n  if (typeof obj.output_text === 'string' && obj.output_text.trim()) return obj.output_text.trim();\n  if (typeof obj.text === 'string' && obj.text.trim()) return obj.text.trim();\n  if (typeof obj.response?.output_text === 'string' && obj.response.output_text.trim()) return obj.response.output_text.trim();\n\n  const collected = [];\n  const visit = (value) => {\n    if (!value) return;\n    if (typeof value === 'string') {\n      const trimmed = value.trim();\n      if (trimmed) collected.push(trimmed);\n      return;\n    }\n    if (Array.isArray(value)) {\n      for (const item of value) visit(item);\n      return;\n    }\n    if (typeof value === 'object') {\n      if (typeof value.text === 'string') collected.push(value.text.trim());\n      if (typeof value.output_text === 'string') collected.push(value.output_text.trim());\n      if (value.content) visit(value.content);\n      if (value.output) visit(value.output);\n      if (value.result) visit(value.result);\n      if (value.response) visit(value.response);\n      if (value.data) visit(value.data);\n    }\n  };\n\n  visit(obj.output);\n  visit(obj.result);\n  visit(obj.response);\n  visit(obj.data);\n\n  return collected.filter(Boolean).join('\\n').trim();\n};\n\nconst extractJson = (raw) => {\n  if (!raw || typeof raw !== 'string') return null;\n  const fenced = raw.match(/```(?:json)?\\s*([\\s\\S]*?)```/i);\n  const candidate = fenced ? fenced[1] : raw;\n  const direct = candidate.trim();\n  try { return JSON.parse(direct); } catch {}\n  const first = candidate.indexOf('{');\n  const last = candidate.lastIndexOf('}');\n  if (first >= 0 && last > first) {\n    const sliced = candidate.slice(first, last + 1);\n    try { return JSON.parse(sliced); } catch {}\n  }\n  return null;\n};\n\nconst toPercent = (value) => {\n  if (typeof value !== 'number' || !Number.isFinite(value)) return '';\n  return `${Math.round(value * 100)}%`;\n};\n\nconst summarizeReason = (status, reason, rawText) => {\n  const combined = `${reason || ''} ${rawText || ''}`.toLowerCase();\n  if (status === 'not_a_task') {\n    if (/beehiiv/.test(combined)) return 'розсилка beehiiv';\n    if (/newsletter/.test(combined)) return 'інформаційна розсилка';\n    if (/not survey/.test(combined) || /not a task/.test(combined)) return 'це не опитування';\n  }\n  if (status === 'completed') return 'завершено';\n  if (status === 'screened_out') return 'відсіяно';\n  if (status === 'vpn_failed') return 'VPN не активний';\n  if (status === 'failed') return 'виконання завершилось помилкою';\n  if (status === 'task_unavailable') return 'задача недоступна';\n  if (status === 'needs_manual_review') return 'потрібна ручна перевірка';\n  if (status === 'agent_error') return 'GoClaw не зміг коректно обробити лист';\n  return reason || '';\n};\n\nconst shouldAppendReason = (status, summary) => {\n  if (!summary) return false;\n  const normalized = summary.trim().toLowerCase();\n  if (status === 'needs_manual_review' && normalized === 'потрібна ручна перевірка') return false;\n  if (status === 'task_unavailable' && normalized === 'задача недоступна') return false;\n  if (status === 'agent_error' && normalized === 'goclaw не зміг коректно обробити лист') return false;\n  return true;\n};\n\nconst rawText = pickRawText(resp);\nconst parsed = extractJson(rawText);\n\nlet status = 'agent_error';\nlet taskConfirmed = false;\nlet openedTask = false;\nlet taskLink = source.taskLink || '';\nlet handoffLink = source.taskLink || '';\nlet reason = 'GoClaw did not return valid strict JSON.';\nlet nextAction = 'manual_review';\nlet pageTitle = '';\nlet reward = source.reward || 'невідомо';\nlet duration = source.duration || 'невідомо';\nlet portalMismatch = null;\nlet confidence = null;\n\nif (parsed && typeof parsed === 'object') {\n  status = parsed.status || (parsed.taskConfirmed ? 'ready_for_handoff' : 'needs_manual_review');\n  taskConfirmed = Boolean(parsed.taskConfirmed);\n  openedTask = Boolean(parsed.openedTask);\n  taskLink = parsed.taskLink || taskLink;\n  handoffLink = parsed.handoffLink || parsed.resumeUrl || parsed.currentUrl || taskLink;\n  reason = parsed.reason || reason;\n  nextAction = parsed.nextAction || nextAction;\n  pageTitle = parsed.pageTitle || parsed.title || '';\n  reward = parsed.reward || reward;\n  duration = parsed.duration || duration;\n  portalMismatch = Object.prototype.hasOwnProperty.call(parsed, 'portalMismatch') ? parsed.portalMismatch : portalMismatch;\n  confidence = typeof parsed.confidence === 'number' ? parsed.confidence : confidence;\n}\n\n// --- Whitelist safety net: if Analyze marked taskConfirmed but agent still\n//     refused with needs_manual_review, escalate to task_unavailable so we\n//     don't tell the user to do whitelisted surveys manually.\nif (source.taskConfirmed === true && status === 'needs_manual_review') {\n  status = 'task_unavailable';\n  reason = `Whitelist autorun (${source.whitelistMatch || 'meinungsplatz_autorun'}) but agent refused: ${reason || 'no detail'}`;\n  nextAction = 'auto_retry';\n}\n\nconst hostLabel = $input.item.json.executionHostLabel || source.executionHostLabel || (source.routeMode === 'alpine_vpn_only' ? 'Alpine' : 'Mac');\nconst confidenceText = toPercent(confidence);\nconst reasonSummary = summarizeReason(status, reason, rawText);\n\nconst htmlEscape = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst quoteSubject = source.subject ? `\"${htmlEscape(source.subject)}\"` : '\"без теми\"';\nlet lines = [\n  `📨 Лист: ${quoteSubject}`,\n  `👤 Від: ${htmlEscape(source.fromDisplay || 'невідомо')}`,\n  `🧭 Для: ${source.accountName || 'невідомо'}`,\n];\n\nif (status === 'not_a_task') {\n  lines.push(`⚪️ Не задача${reasonSummary ? ` — ${reasonSummary}` : ''}${confidenceText ? ` (впевненість ${confidenceText})` : ''}`);\n  lines.push('🗑 Відхилено');\n} else if (status === 'ready_for_handoff') {\n  lines.push(`✅ Задача підтверджена${confidenceText ? ` (впевненість ${confidenceText})` : ''}`);\n  lines.push(`🖥 Маршрут: ${hostLabel}`);\n  if (reward && reward !== 'невідомо') lines.push(`💰 ${reward}`);\n  if (duration && duration !== 'невідомо') lines.push(`⏱ ${duration}`);\n  if (handoffLink) lines.push(`🔗 Handoff: ${htmlEscape(handoffLink)}`);\n} else if (status === 'needs_manual_review') {\n  lines.push(`🟡 Потрібна ручна перевірка${shouldAppendReason(status, reasonSummary) ? ` — ${reasonSummary}` : ''}${confidenceText ? ` (впевненість ${confidenceText})` : ''}`);\n  if (reward && reward !== 'невідомо') lines.push(`💰 ${reward}`);\n  if (duration && duration !== 'невідомо') lines.push(`⏱ ${duration}`);\n  if (taskLink) lines.push(`🔗 Лінк: ${htmlEscape(taskLink)}`);\n} else if (status === 'completed') {\n  lines.push('✅ Опитування завершено');\n  if (reward && reward !== 'невідомо') lines.push(`💰 Нагорода: ${reward}`);\n} else if (status === 'screened_out') {\n  lines.push('🚫 Відсіяно (screened out)');\n  if (reward && reward !== 'невідомо') lines.push(`💰 ${reward}`);\n} else if (status === 'vpn_failed') {\n  lines.push('🔴 VPN не активний — Swiss IP не підтверджено (не CH)');\n} else if (status === 'failed') {\n  lines.push(`🔴 Виконання завершилось помилкою${shouldAppendReason(status, reasonSummary) ? ` — ${reasonSummary}` : ''}`);\n  if (reward && reward !== 'невідомо') lines.push(`💰 ${reward}`);\n} else if (status === 'task_unavailable') {\n  lines.push(`🔴 Задача недоступна${shouldAppendReason(status, reasonSummary) ? ` — ${reasonSummary}` : ''}${confidenceText ? ` (впевненість ${confidenceText})` : ''}`);\n  if (reward && reward !== 'невідомо') lines.push(`💰 ${reward}`);\n  if (duration && duration !== 'невідомо') lines.push(`⏱ ${duration}`);\n  if (taskLink) lines.push(`🔗 Лінк: ${htmlEscape(taskLink)}`);\n} else {\n  lines.push(`⚠️ Помилка обробки${shouldAppendReason(status, reasonSummary) ? ` — ${reasonSummary}` : ''}`);\n  if (reward && reward !== 'невідомо') lines.push(`💰 ${reward}`);\n  if (duration && duration !== 'невідомо') lines.push(`⏱ ${duration}`);\n  if (taskLink) lines.push(`🔗 Лінк: ${htmlEscape(taskLink)}`);\n}\n\nif (pageTitle && status === 'ready_for_handoff') lines.push(`🪟 Сторінка: ${htmlEscape(pageTitle)}`);\nif (portalMismatch === true) lines.push('🧭 Увага: відкрито інший портал');\n\nreturn {\n  json: {\n    ...source,\n    ...$input.item.json,\n    executionHostLabel: hostLabel,\n    goclawRawResponse: resp,\n    goclawRawText: rawText,\n    goclawParsed: parsed,\n    goclawStatus: status,\n    taskConfirmed,\n    openedTask,\n    finalTaskLink: taskLink,\n    handoffLink,\n    portalMismatch,\n    goclawReason: reason,\n    goclawNextAction: nextAction,\n    telegramText: lines.filter(Boolean).join('\\n'),\n  },\n};\n"
+        },
+        "id": "83df55a6-f3db-4301-ae72-97df5c6af439",
+        "name": "Compose Final Alert",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1104,
+          64
+        ]
+      },
+      {
+        "parameters": {
+          "chatId": "={{ $env.SURVEYS_TELEGRAM_CHAT_ID || '-4964233423' }}",
+          "text": "={{ $json[\"workflowMarker\"] ? ('NEW-WF FINAL ' + $json[\"workflowMarker\"] + ' host=' + ($json[\"executionHostLabel\"] || 'unknown') + ' status=' + ($json[\"goclawStatus\"] || 'unknown') + ' opened=' + ($json[\"openedTask\"] ? 'yes' : 'no')) : $json[\"telegramText\"] }}",
+          "additionalFields": {
+            "appendAttribution": false,
+            "disable_web_page_preview": true,
+            "parse_mode": "HTML"
+          }
+        },
+        "id": "de76cdcd-5b7c-4e54-bbab-985485d09ea0",
+        "name": "Telegram Alert",
+        "type": "n8n-nodes-base.telegram",
+        "typeVersion": 1.2,
+        "position": [
+          1328,
+          64
+        ],
+        "webhookId": "7a0b54ee-e8cc-4c4e-8317-d568b8686bd0",
+        "credentials": {
+          "telegramApi": {
+            "id": "kvnsgPyqexz5KHTc",
+            "name": "Telegram account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "chatId": "={{ $env.SURVEYS_TELEGRAM_CHAT_ID || '-4964233423' }}",
+          "text": "={{ $json[\"workflowMarker\"] ? ('NEW-WF NOAGENT ' + $json[\"workflowMarker\"] + ' primary=' + ($json[\"primaryFailureReason\"] || 'none') + ' fallback=' + ($json[\"fallbackFailureReason\"] || 'none')) : $json[\"noAgentTelegramText\"] }}",
+          "additionalFields": {
+            "appendAttribution": false,
+            "disable_web_page_preview": true,
+            "parse_mode": "HTML"
+          }
+        },
+        "id": "04e89840-ea78-47ca-84cc-59dd8c0fc5fb",
+        "name": "Telegram No-Agent Alert",
+        "type": "n8n-nodes-base.telegram",
+        "typeVersion": 1.2,
+        "position": [
+          880,
+          288
+        ],
+        "webhookId": "0343e705-ae04-462c-aad0-fc08711a8139",
+        "credentials": {
+          "telegramApi": {
+            "id": "kvnsgPyqexz5KHTc",
+            "name": "Telegram account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "url": "={{ (($json['primaryBaseUrl'] || $('Analyze Email + Extract Link').itemMatching(0).json['primaryBaseUrl']) || ($env.SURVEYS_GCLAW_PRIMARY_BASE_URL || 'http://100.84.163.96:18790')) + '/v1/agents' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer ={{ $env.SURVEYS_GCLAW_PRIMARY_TOKEN }}"
+              },
+              {
+                "name": "X-GoClaw-User-Id",
+                "value": "system"
+              },
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 30000
+          }
+        },
+        "id": "de24ebf6-7a70-49db-8077-142531243a53",
+        "name": "List Primary GoClaw Agents",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          224,
+          160
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const source = $('Analyze Email + Extract Link').itemMatching(0).json;\nconst resp = $json || {};\n\nconst asText = (value) => {\n  if (!value) return '';\n  if (typeof value === 'string') return value;\n  if (typeof value.message === 'string') return value.message;\n  if (typeof value.description === 'string') return value.description;\n  try { return JSON.stringify(value); } catch { return String(value); }\n};\n\nconst items = Array.isArray(resp.data)\n  ? resp.data\n  : Array.isArray(resp.agents)\n    ? resp.agents\n    : Array.isArray(resp.body?.data)\n      ? resp.body.data\n      : Array.isArray(resp.body?.agents)\n        ? resp.body.agents\n        : [];\n\nconst surveysAgent = items.find((agent) => {\n  if (!agent || typeof agent !== 'object') return false;\n  const id = String(agent.id || '').toLowerCase();\n  const slug = String(agent.slug || '').toLowerCase();\n  const name = String(agent.name || '').toLowerCase();\n  const agentKey = String(agent.agent_key || '').toLowerCase();\n  const displayName = String(agent.display_name || '').toLowerCase();\n  const model = String(agent.model || '').toLowerCase();\n  return id === 'surveys' || slug === 'surveys' || name === 'surveys' || agentKey === 'surveys' || displayName === 'surveys' || model === 'goclaw:surveys';\n});\n\nconst primaryAvailable = Boolean(surveysAgent);\nconst failureReason = primaryAvailable\n  ? ''\n  : asText(resp.error) || asText(resp.body?.error) || asText(resp.message) || 'Mac GoClaw did not return a surveys agent.';\n\nconst noAgentTelegramText = [\n  '⚠️ Ні primary, ні fallback GoClaw не готові до запуску surveys.',\n  `👤 Для: ${source.accountName || 'невідомо'}`,\n  `📨 Тема: ${source.subject || 'без теми'}`,\n  `🔗 Candidate link: ${source.taskLink || 'не знайдено'}`,\n  `🖥 Primary reason: ${failureReason || 'surveys agent missing on Mac'}`,\n  '👉 Що зробити: перевірити Mac/Alpine GoClaw і відкрити задачу вручну за candidate link.',\n].join('\\n');\n\nreturn {\n  json: {\n    ...source,\n    primaryAgentsResponse: resp,\n    executionHost: 'mac',\n    executionHostLabel: 'Mac primary',\n    selectedGoClawAgent: surveysAgent?.id || 'surveys',\n    primaryAvailable,\n    primaryFailureReason: failureReason,\n    goclawRunnableRequestBody: source.primaryGoclawRequestBody,\n    noAgentTelegramText,\n  },\n};"
+        },
+        "id": "64a5e454-40b1-49a8-8624-962e451685be",
+        "name": "Prepare Primary GoClaw Request",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          448,
+          160
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "b027c7ec-d482-4a07-a0d8-c795bb50be66",
+                "leftValue": "={{ $json[\"primaryAvailable\"] }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "61141368-04a3-4c7e-b9a1-5bfd6c731e84",
+        "name": "Primary GoClaw Available?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          672,
+          160
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ ($json['primaryBaseUrl'] || ($env.SURVEYS_GCLAW_PRIMARY_BASE_URL || 'http://100.84.163.96:18790')) + '/v1/responses' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer ={{ $env.SURVEYS_GCLAW_PRIMARY_TOKEN }}"
+              },
+              {
+                "name": "X-GoClaw-User-Id",
+                "value": "system"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json[\"goclawRunnableRequestBody\"] }}",
+          "options": {
+            "timeout": 600000
+          }
+        },
+        "id": "a5715532-9224-4aeb-b5d0-fe183a8eba4d",
+        "name": "Primary GoClaw Responses API",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          880,
+          64
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ JSON.stringify($json) }}",
+                "rightValue": "Browser tool unavailable",
+                "operator": {
+                  "type": "string",
+                  "operation": "contains"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "9c7f0a1b-3f78-4c4f-9e8b-b3d2f0d03f41",
+        "name": "Primary Browser Fallback?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          1104,
+          64
+        ]
+      }
+    ],
+    "connections": {
+      "Gmail Task Monitor": {
+        "main": [
+          [
+            {
+              "node": "Analyze Email + Extract Link",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Analyze Email + Extract Link": {
+        "main": [
+          [
+            {
+              "node": "Should Invoke GoClaw?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "E2E Test Webhook": {
+        "main": [
+          [
+            {
+              "node": "Normalize Test Payload",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalize Test Payload": {
+        "main": [
+          [
+            {
+              "node": "Analyze Email + Extract Link",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Should Invoke GoClaw?": {
+        "main": [
+          [
+            {
+              "node": "Telegram Pre-Alert",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Telegram Pre-Alert": {
+        "main": [
+          [
+            {
+              "node": "Route To Alpine Only?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Route To Alpine Only?": {
+        "main": [
+          [
+            {
+              "node": "List Fallback GoClaw Agents",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "List Primary GoClaw Agents",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "List Fallback GoClaw Agents": {
+        "main": [
+          [
+            {
+              "node": "Prepare Fallback GoClaw Request",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Fallback GoClaw Request": {
+        "main": [
+          [
+            {
+              "node": "Fallback GoClaw Available?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Fallback GoClaw Available?": {
+        "main": [
+          [
+            {
+              "node": "Fallback GoClaw Responses API",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Telegram No-Agent Alert",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Fallback GoClaw Responses API": {
+        "main": [
+          [
+            {
+              "node": "Compose Final Alert",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Compose Final Alert": {
+        "main": [
+          [
+            {
+              "node": "Telegram Alert",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "List Primary GoClaw Agents": {
+        "main": [
+          [
+            {
+              "node": "Prepare Primary GoClaw Request",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Primary GoClaw Request": {
+        "main": [
+          [
+            {
+              "node": "Primary GoClaw Available?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Primary GoClaw Available?": {
+        "main": [
+          [
+            {
+              "node": "Primary GoClaw Responses API",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "List Fallback GoClaw Agents",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Primary GoClaw Responses API": {
+        "main": [
+          [
+            {
+              "node": "Primary Browser Fallback?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Should Invoke GoClaw": {
+        "main": [
+          [
+            {
+              "node": "Route To Alpine Only?"
+            }
+          ]
+        ]
+      },
+      "Primary Browser Fallback?": {
+        "main": [
+          [
+            {
+              "node": "List Fallback GoClaw Agents",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Compose Final Alert",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "binaryMode": "separate",
+      "availableInMCP": false,
+      "callerPolicy": "workflowsFromSameOwner"
+    },
+    "staticData": {
+      "node:Gmail Task Monitor1": {
+        "Gmail Task Monitor1": {
+          "lastTimeChecked": 1775792768
+        }
+      },
+      "node:Gmail Task Monitor": {
+        "Gmail Task Monitor": {
+          "lastTimeChecked": 1776963912,
+          "possibleDuplicates": [
+            "19dbb4d97ec067f4",
+            "19db9c028479ecb8"
+          ]
+        }
+      }
+    },
+    "meta": {
+      "aiBuilderAssisted": true
+    },
+    "pinData": {},
+    "versionId": "18f90b8f-919b-4571-9210-b01fdec1a09d",
+    "activeVersionId": "18f90b8f-919b-4571-9210-b01fdec1a09d",
+    "versionCounter": 193,
+    "triggerCount": 2,
+    "shared": [
+      {
+        "updatedAt": "2026-04-10T03:30:56.900Z",
+        "createdAt": "2026-04-10T03:30:56.900Z",
+        "role": "workflow:owner",
+        "workflowId": "c4gZHN2sl3UMvkTs",
+        "projectId": "jDYjVpwBy8rOYlqD",
+        "project": {
+          "updatedAt": "2025-02-25T04:38:10.359Z",
+          "createdAt": "2025-02-25T04:17:02.938Z",
+          "id": "jDYjVpwBy8rOYlqD",
+          "name": "Volodymyr Kovalenko <trebatak@hotmail.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "creatorId": "ab8525fc-0b0a-43d5-bbf1-6f2d60bcc73e"
+        }
+      }
+    ],
+    "tags": [],
+    "activeVersion": {
+      "updatedAt": "2026-04-18T02:38:59.490Z",
+      "createdAt": "2026-04-18T02:38:59.490Z",
+      "versionId": "18f90b8f-919b-4571-9210-b01fdec1a09d",
+      "workflowId": "c4gZHN2sl3UMvkTs",
+      "nodes": [
+        {
+          "parameters": {
+            "pollTimes": {
+              "item": [
+                {
+                  "mode": "everyX",
+                  "unit": "minutes"
+                }
+              ]
+            },
+            "simple": false,
+            "filters": {
+              "includeDrafts": false,
+              "sender": "no-reply@meinungsplatz.ch"
+            },
+            "options": {}
+          },
+          "id": "f4f2d391-500d-48bc-afb7-98a1ae7ecbc7",
+          "name": "Gmail Task Monitor",
+          "type": "n8n-nodes-base.gmailTrigger",
+          "typeVersion": 1.2,
+          "position": [
+            -688,
+            160
+          ],
+          "credentials": {
+            "gmailOAuth2": {
+              "id": "qRAmD4Td3GlZTtF5",
+              "name": "Gmail account"
+            }
+          }
+        },
+        {
+          "parameters": {
+            "mode": "runOnceForEachItem",
+            "jsCode": "const data = $json || {};\n\nconst asString = (value) => {\n  if (value === null || value === undefined) return '';\n  if (typeof value === 'string') return value;\n  try {\n    return JSON.stringify(value);\n  } catch {\n    return String(value);\n  }\n};\n\nconst htmlToText = (html) => asString(html)\n  .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')\n  .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')\n  .replace(/<[^>]+>/g, ' ')\n  .replace(/&nbsp;/gi, ' ')\n  .replace(/&amp;/gi, '&')\n  .replace(/&quot;/gi, '\"')\n  .replace(/&#39;/gi, \"'\")\n  .replace(/\\s+/g, ' ')\n  .trim();\n\nconst extractAddress = (value) => {\n  if (!value) return '';\n  if (typeof value === 'string') {\n    const match = value.match(/<?([A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,})>?/i);\n    return match ? match[1].toLowerCase() : value.trim().toLowerCase();\n  }\n  if (Array.isArray(value)) {\n    for (const item of value) {\n      const found = extractAddress(item);\n      if (found) return found;\n    }\n    return '';\n  }\n  if (typeof value === 'object') {\n    if (typeof value.address === 'string') return value.address.trim().toLowerCase();\n    if (Array.isArray(value.value)) {\n      for (const item of value.value) {\n        const found = extractAddress(item);\n        if (found) return found;\n      }\n    }\n    if (typeof value.text === 'string') {\n      const found = extractAddress(value.text);\n      if (found) return found;\n    }\n  }\n  return '';\n};\n\nconst formatAddress = (value) => {\n  if (!value) return '';\n  if (typeof value === 'string') return value.trim();\n  if (Array.isArray(value)) {\n    const items = value.map((item) => formatAddress(item)).filter(Boolean);\n    return items.join(', ');\n  }\n  if (typeof value === 'object') {\n    if (Array.isArray(value.value) && value.value.length > 0) {\n      const first = value.value[0] || {};\n      const name = asString(first.name).trim();\n      const address = asString(first.address).trim();\n      if (name && address) return `${name} <${address}>`;\n      return name || address || asString(value.text).trim();\n    }\n    if (typeof value.text === 'string') return value.text.trim();\n    const name = asString(value.name).trim();\n    const address = asString(value.address).trim();\n    if (name && address) return `${name} <${address}>`;\n    return name || address;\n  }\n  return asString(value).trim();\n};\n\nconst subject = asString(data.subject).trim();\nconst text = asString(data.text).replace(/\\u00a0/g, ' ').trim();\nconst html = asString(data.html);\nconst htmlText = htmlToText(html);\nconst fromDisplay = formatAddress(data.from) || formatAddress(data.sender) || formatAddress(data.replyTo) || 'невідомо';\nconst fromEmail = extractAddress(data.from) || extractAddress(data.sender) || extractAddress(data.replyTo);\nconst toDisplay = formatAddress(data.to) || formatAddress(data.deliveredTo);\nconst toRaw = `${asString(data.to)} ${asString(data.deliveredTo)}`.trim();\nconst combined = [subject, text, htmlText].filter(Boolean).join('\\n');\n\nconst recipientEmail =\n /lekov00@gmail\\.com/i.test(toRaw) ? 'lekov00@gmail.com' :\n /arsen\\.k111999@gmail\\.com/i.test(toRaw) ? 'arsen.k111999@gmail.com' :\n /tukroschu@gmail\\.com/i.test(toRaw) ? 'tukroschu@gmail.com' :\n '';\n\nconst accountName =\n recipientEmail === 'lekov00@gmail.com' ? 'Олени' :\n (recipientEmail === 'arsen.k111999@gmail.com' || recipientEmail === 'tukroschu@gmail.com') ? 'Арсена' :\n 'невідомого';\n\nconst routeMode = recipientEmail === 'lekov00@gmail.com' ? 'alpine_vpn_only' : 'mac_primary';\nconst targetGoClawModel = recipientEmail === 'lekov00@gmail.com' ? 'goclaw:surveys-olena' : 'goclaw:surveys-arsen';\nconst allowMacOpen = routeMode !== 'alpine_vpn_only';\nconst allowAlpineExecution = routeMode === 'alpine_vpn_only';\nconst trustedSender = fromEmail === 'no-reply@meinungsplatz.ch';\nconst senderAllowed = trustedSender;\nconst workflowMarker = asString(data.workflowMarker || data.debugMarker).trim();\nconst primaryBaseUrl = asString(data.primaryBaseUrl).trim() || process.env.SURVEYS_GCLAW_PRIMARY_BASE_URL || 'http://100.84.163.96:18790';\nconst fallbackBaseUrl = asString(data.fallbackBaseUrl).trim() || process.env.SURVEYS_GCLAW_FALLBACK_BASE_URL || 'http://100.113.140.25:18790';\nconst vpnCountryRequired = 'CH';\nconst vpnCountryOverride = asString(data.vpnCountryOverride || data.alpineVpnCountryOverride).trim().toUpperCase();\nconst hrefLinks = [...html.matchAll(/href=[\"']([^\"'#]+)[\"']/gi)].map((m) => m[1]);\nconst rawLinks = [...(`${text}\\n${html}`).matchAll(/https?:\\/\\/[^\\s<>\"')\\]]+/gi)].map((m) => m[0]);\nconst cleanLink = (url) => asString(url).trim().replace(/[),.;]+$/g, '').replace(/&amp;/g, '&');\nconst uniqueLinks = [...new Set([...hrefLinks, ...rawLinks].map(cleanLink).filter(Boolean))];\n\nconst scoreLink = (url) => {\n  const u = url.toLowerCase();\n  let score = 0;\n  if (/meinungsplatz|survey|sondage|enquete|questionnaire|poll|study|task|invite|invitation|continue|start|befrag|umfrage/.test(u)) score += 6;\n  if (/token=|auth=|session=|survey=|questionnaire=|invite=|invitation=/.test(u)) score += 3;\n  if (/unsubscribe|privacy|impress|contact|help|support|facebook|instagram|linkedin|twitter|x\\.com|beehiiv/.test(u)) score -= 10;\n  if (/https?:\\/\\//.test(u)) score += 1;\n  return score;\n};\n\nconst sortedLinks = uniqueLinks\n  .map((url) => ({ url, score: scoreLink(url) }))\n  .sort((a, b) => b.score - a.score);\n\nconst topLink = sortedLinks.length ? sortedLinks[0] : null;\nconst taskLink = topLink && topLink.score >= 4 ? topLink.url : null;\nconst rewardMatch =\n  combined.match(/\\b(\\d+(?:[.,]\\d{1,2})?)\\s*CHF\\b/i) ||\n  combined.match(/\\bCHF\\s*(\\d+(?:[.,]\\d{1,2})?)\\b/i);\nconst readTimeMatch = combined.match(/\\b(\\d{1,3})\\s*(?:min|mins|minutes?|minute|mn)\\s+read\\b/i);\nconst durationMatch = readTimeMatch ? null : combined.match(/\\b(\\d{1,3})(?:\\s*[-–]\\s*\\d{1,3})?\\s*(?:min|mins|minutes?|minute|mn)\\b/i);\nconst securitySubject = /\\b(connexion inhabituelle|unusual login|unusual sign-?in|login attempt|security alert|code de connexion|code de verification|mot de passe|password reset|verify your account|v[eé]rification)\\b/i.test(subject);\n\nconst keywordTests = [\n  { name: 'survey', regex: /\\b(sondage|enqu[eê]te|survey|poll|questionnaire|umfrage|befragung)\\b/i },\n  { name: 'opinion', regex: /\\b(votre avis compte|your opinion|avis|opinion)\\b/i },\n  { name: 'reward', regex: /\\b(chf|récompense|reward|vergütung|bonus)\\b/i },\n  { name: 'duration', regex: /\\b(min|minutes?|minute)\\b/i, disabled: Boolean(readTimeMatch) },\n  { name: 'invite', regex: /\\b(invitation|invite|invited|einladung)\\b/i },\n  { name: 'start', regex: /\\b(commencer|start|continue|participer|teilnehmen)\\b/i },\n];\n\nconst matchedKeywords = keywordTests\n  .filter((k) => !k.disabled && k.regex.test(combined))\n  .map((k) => k.name);\nconst highIntentKeywordCount = matchedKeywords.filter((name) => ['survey', 'opinion', 'invite', 'start'].includes(name)).length;\n\nlet score = 0;\nif (trustedSender) score += 5;\nif (taskLink) score += 4;\nif (rewardMatch) score += 3;\nif (durationMatch) score += 2;\nscore += Math.min(matchedKeywords.length, 4);\n\nlet classification = 'ignore';\nif (senderAllowed && (trustedSender || rewardMatch || durationMatch || highIntentKeywordCount >= 2 || (taskLink && highIntentKeywordCount >= 1))) {\n  classification = 'unclear_review';\n}\nif (senderAllowed && taskLink && (rewardMatch || durationMatch || highIntentKeywordCount >= 2)) {\n  classification = 'likely_task';\n} else if (senderAllowed && ((rewardMatch && durationMatch) || (trustedSender && highIntentKeywordCount >= 1))) {\n  classification = 'likely_task';\n}\nif (securitySubject) {\n  classification = 'ignore';\n  score = 0;\n}\n\n// --- Meinungsplatz autorun whitelist (explicit signal to agent) ---\nconst meinungsplatzSender = /meinungsplatz\\.ch/i.test(fromEmail || '') || /meinungsplatz\\.ch|espacedopinion/i.test(fromDisplay || '');\nconst meinungsplatzLink = taskLink ? /meinungsplatz\\.ch\\/m3click/i.test(taskLink) : false;\nconst rewardPresent = Boolean(rewardMatch);\nconst durationPresent = Boolean(durationMatch) || Boolean(readTimeMatch);\nconst accountMapped = accountName === 'Арсена' || accountName === 'Олени';\nconst meinungsplatzAutorun = !securitySubject && meinungsplatzSender && meinungsplatzLink && rewardPresent && durationPresent && accountMapped;\nlet taskConfirmed = false;\nlet autoExecute = false;\nlet whitelistMatch = '';\nif (meinungsplatzAutorun) {\n  classification = 'likely_task';\n  taskConfirmed = true;\n  autoExecute = true;\n  whitelistMatch = 'meinungsplatz_autorun';\n}\n\nconst shouldInvokeAgent = senderAllowed && classification !== 'ignore';\nconst reward = rewardMatch ? rewardMatch[1].replace(',', '.') + ' CHF' : 'невідомо';\nconst duration = durationMatch ? durationMatch[1] + ' min' : 'невідомо';\nconst excerptSource = htmlText || text || subject || '';\nconst excerpt = excerptSource.replace(/\\s+/g, ' ').trim().slice(0, 1200);\nconst requestedAction = taskLink ? 'open_task_to_handoff' : 'review_email_only';\n\nconst sharedPromptParts = [\n  'Return strict JSON only. No markdown.',\n  'Required JSON schema:',\n  '{\"status\":\"completed|screened_out|failed|vpn_failed|needs_manual_review|not_a_task|task_unavailable|agent_error\",\"taskConfirmed\":true,\"openedTask\":false,\"taskLink\":\"\",\"currentUrl\":\"\",\"pageTitle\":\"\",\"reward\":\"\",\"duration\":\"\",\"portalMismatch\":null,\"reason\":\"\",\"nextAction\":\"\",\"confidence\":0.0}',\n  'Context:',\n  `requested_action: ${requestedAction}`,\n  `classification: ${classification}`,\n  `account: ${accountName}`,\n `recipient_email: ${recipientEmail || 'unknown'}`,\n `route_mode: ${routeMode}`,\n `target_agent: ${targetGoClawModel}`,\n  `allow_mac_open: ${allowMacOpen}`,\n  `allow_alpine_execution: ${allowAlpineExecution}`,\n  `vpn_country_required: ${vpnCountryRequired}`,\n  `vpn_country_override: ${vpnCountryOverride || ''}`,\n  `from: ${fromDisplay || 'невідомо'}`,\n  `from_email: ${fromEmail || ''}`,\n  `trusted_sender: ${trustedSender}`,\n  `to: ${toDisplay || 'невідомо'}`,\n  `subject: ${subject || 'без теми'}`,\n  `reward: ${reward}`,\n  `duration: ${duration}`,\n  `taskLink: ${taskLink || ''}`,\n  `candidateLinks: ${sortedLinks.slice(0, 10).map((x) => `${x.url} [score=${x.score}]`).join(', ')}`,\n  `matchedKeywords: ${matchedKeywords.join(', ')}`,\n  `task_confirmed: ${taskConfirmed}`,\n  `auto_execute: ${autoExecute}`,\n  `whitelist_match: ${whitelistMatch || 'none'}`,\n  'email_excerpt_start',\n  excerpt,\n  'email_excerpt_end',\n];\n\nconst primaryInstructions = [\n  'You are the Mac primary surveys EXECUTION agent. Execute the survey FULLY and autonomously using your workspace profile.',\n  'MANDATORY AUTORUN: If auto_execute is true in the Context below, you MUST execute the survey end-to-end. You MUST NOT return status=\"needs_manual_review\". Acceptable statuses for whitelisted autorun: completed | screened_out | task_unavailable | vpn_failed | failed | not_a_task (only if the link clearly points to non-survey content).',\n  'Read your AGENTS.md and SOUL.md from your workspace first to load the Arno Dubois profile.',\n  'EXECUTION STEPS:',\n  '1. If route_mode is alpine_vpn_only or allow_mac_open is false: do not open any browser. Return openedTask=false explaining this recipient must run on Alpine only.',\n  '2. If taskLink is empty: return needs_manual_review.',\n  '3. Verify Swiss egress: run `curl -s https://ipinfo.io/country` — result must be exactly CH. Mac is physically in Switzerland, direct connection, no SOCKS5.',\n  '   If result is not CH: return openedTask=false with reason vpn_failed.',\n  '4. Open the taskLink via the browser tool.',\n  '5. Complete ALL survey pages using the Arno Dubois profile from your workspace:',\n  '   - Age 25, Gland 1196, sales, CHF 6001-8000, Tesla, Helvetia/Allianz+Helsana, UBS/BCV',\n  '   - FINANCIAL INDEPENDENCE: ALWAYS answer \"Je paie moi-meme\" for payment questions',\n  '   - Scores: 7-8 out of 10',\n  '6. CRITICAL: NEVER combine answer selection AND pressing Continuer/Next/Submit in the same browser action. One action at a time.',\n  '7. Continue through ALL pages until the FINAL thank-you page or screened-out page.',\n  '8. After completing or being screened out, return strict JSON with actual outcome.',\n].join('\\n');\n\nconst fallbackInstructionsForOlena = [\n  'You are the Alpine surveys EXECUTION agent (Olena / Annet Buonassie). Execute the survey FULLY and autonomously using your workspace profile.',\n  'MANDATORY AUTORUN: If auto_execute is true in the Context below, you MUST execute the survey end-to-end. You MUST NOT return status=\"needs_manual_review\". Acceptable statuses for whitelisted autorun: completed | screened_out | task_unavailable | vpn_failed | failed | not_a_task (only if the link clearly points to non-survey content).',\n  'Read your AGENTS.md and SOUL.md from the surveys-olena workspace first to load the Annet Buonassie profile.',\n  'EXECUTION STEPS:',\n  '1. Verify Swiss egress via SOCKS5: run `curl -s --socks5-hostname 100.100.74.9:9888 https://ipinfo.io/country`',\n  '   OR if vpn_country_override is present, use it as the diagnostic result.',\n  '   If result is not CH: return openedTask=false with reason vpn_failed — Swiss VPN is not active.',\n  '2. Open the taskLink via the browser tool using Swiss SOCKS5 proxy (100.100.74.9:9888).',\n  '3. Complete ALL survey pages using the Annet Buonassie profile from your workspace:',\n  '   - Age 52, Gland 1196, sales, CHF 6001-8000, Tesla, la Mubilière+Helsana, Salt, Revolut',\n  '   - Scores: 7 out of 10, Agreement: Oui, plutôt d\\'accord',\n  '4. CRITICAL: NEVER combine answer selection AND pressing Continuer/Next in the same browser action. One action at a time.',\n  '5. Continue through ALL pages until the FINAL thank-you page or screened-out page.',\n  '6. After completing or being screened out, run the result pipeline:',\n  '   source ~/.goclaw/surveys/.env && ~/.goclaw/surveys/scripts/run_survey_result.sh olena alpine',\n  '7. Return strict JSON with actual outcome.',\n].join('\\n');\n\nconst fallbackInstructionsForArsen = [\n  'You are the Alpine FALLBACK surveys EXECUTION agent for Arsen (Arno Dubois). Mac primary is unavailable. Execute the survey FULLY and autonomously using your workspace profile.',\n  'MANDATORY AUTORUN: If auto_execute is true in the Context below, you MUST execute the survey end-to-end. You MUST NOT return status=\"needs_manual_review\". Acceptable statuses for whitelisted autorun: completed | screened_out | task_unavailable | vpn_failed | failed | not_a_task (only if the link clearly points to non-survey content).',\n  'Read your AGENTS.md and SOUL.md from the surveys-arsen workspace first to load the Arno Dubois profile.',\n  'EXECUTION STEPS:',\n  '1. Verify Swiss egress via SOCKS5: run `curl -s --socks5-hostname 100.100.74.9:9888 https://ipinfo.io/country`',\n  '   OR if vpn_country_override is present, use it as the diagnostic result.',\n  '   If result is not CH: return openedTask=false with reason vpn_failed — Swiss VPN is not active.',\n  '2. Open the taskLink via the browser tool using Swiss SOCKS5 proxy (100.100.74.9:9888).',\n  '3. Complete ALL survey pages using the Arno Dubois profile from your workspace:',\n  '   - Age 25, Gland 1196, sales, CHF 6001-8000, Tesla, Helvetia/Allianz+Helsana, UBS/BCV',\n  '   - FINANCIAL INDEPENDENCE: ALWAYS answer \"Je paie moi-meme\" for payment questions',\n  '   - Scores: 7-8 out of 10',\n  '4. CRITICAL: NEVER combine answer selection AND pressing Continuer/Next in the same browser action. One action at a time.',\n  '5. Continue through ALL pages until the FINAL thank-you page or screened-out page.',\n  '6. After completing or being screened out, run the result pipeline:',\n  '   source ~/.goclaw/surveys/.env && ~/.goclaw/surveys/scripts/run_survey_result.sh arsen alpine',\n  '7. Return strict JSON with actual outcome.',\n].join('\\n');\n\nconst fallbackInstructions = routeMode === 'alpine_vpn_only'\n  ? fallbackInstructionsForOlena\n  : fallbackInstructionsForArsen;\n\nconst buildMessage = (header, instructions) => [header, instructions, ...sharedPromptParts].join('\\n\\n');\n\nconst primaryGoclawRequestBody = {\n model: targetGoClawModel,\n  messages: [\n    {\n      role: 'user',\n      content: buildMessage('Primary host: Mac.', primaryInstructions),\n    },\n  ],\n};\n\nconst fallbackGoclawRequestBody = {\n model: targetGoClawModel,\n  messages: [\n    {\n      role: 'user',\n      content: buildMessage(routeMode === 'alpine_vpn_only' ? 'Execution host: Alpine Swiss-VPN route required.' : 'Fallback host: Alpine.', fallbackInstructions),\n    },\n  ],\n};\n\nreturn {\n  json: {\n    ...data,\n    accountName,\n    recipientEmail,\n    routeMode,\n    allowMacOpen,\n    allowAlpineExecution,\n    vpnCountryRequired,\n    vpnCountryOverride,\n    trustedSender,\n    senderAllowed,\n    fromDisplay,\n    fromEmail,\n    toDisplay,\n    classification,\n    shouldInvokeAgent,\n    score,\n    reward,\n    duration,\n    matchedKeywords,\n    taskLink,\n    taskLinkCandidates: sortedLinks.slice(0, 10),\n    emailExcerpt: excerpt,\n    requestedAction,\n    workflowMarker,\n    primaryBaseUrl,\n    fallbackBaseUrl,\n    primaryGoclawRequestBody,\n    fallbackGoclawRequestBody,\n    taskConfirmed,\n    autoExecute,\n    whitelistMatch,\n    meinungsplatzAutorun,\n  },\n};\n"
+          },
+          "id": "240e7c46-53dd-4d0e-9dba-47f1dd8d504c",
+          "name": "Analyze Email + Extract Link",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            -464,
+            160
+          ]
+        },
+        {
+          "parameters": {
+            "httpMethod": "POST",
+            "path": "surveys-e2e-test",
+            "options": {
+              "responseCode": {
+                "values": {}
+              },
+              "responseData": "accepted"
+            }
+          },
+          "id": "d37b50c2-2f2b-4b95-838a-fb98297b2fa2",
+          "name": "E2E Test Webhook",
+          "type": "n8n-nodes-base.webhook",
+          "typeVersion": 2.1,
+          "position": [
+            -704,
+            -512
+          ],
+          "webhookId": "f38f81ad-fbd5-4a99-ba15-7c10f8e76c33"
+        },
+        {
+          "parameters": {
+            "mode": "runOnceForEachItem",
+            "jsCode": "const body = $json.body || {};\nreturn { json: { ...body } };"
+          },
+          "id": "7946638a-9514-4310-bfd5-f667edaa97cb",
+          "name": "Normalize Test Payload",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            -400,
+            -144
+          ]
+        },
+        {
+          "parameters": {
+            "conditions": {
+              "options": {
+                "caseSensitive": true,
+                "leftValue": "",
+                "typeValidation": "loose",
+                "version": 2
+              },
+              "conditions": [
+                {
+                  "id": "74cef22f-1d80-4b4d-895e-dd2c471d0841",
+                  "leftValue": "={{ $json[\"shouldInvokeAgent\"] }}",
+                  "rightValue": "",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true",
+                    "singleValue": true
+                  }
+                }
+              ],
+              "combinator": "and"
+            },
+            "options": {}
+          },
+          "id": "ea085518-b058-49f8-8000-9826d61474de",
+          "name": "Should Invoke GoClaw?",
+          "type": "n8n-nodes-base.if",
+          "typeVersion": 2.2,
+          "position": [
+            -224,
+            160
+          ]
+        },
+        {
+          "parameters": {
+            "chatId": "={{ $env.SURVEYS_TELEGRAM_CHAT_ID || '-4964233423' }}",
+            "text": "={{ $json[\"workflowMarker\"] ? ('NEW-WF PREALERT ' + $json[\"workflowMarker\"]) : $json[\"agentPreAlertText\"] }}",
+            "additionalFields": {
+              "appendAttribution": false,
+              "disable_web_page_preview": true,
+              "parse_mode": "HTML"
+            }
+          },
+          "id": "2b515040-ff2c-470a-b4ad-55000f38f7d2",
+          "name": "Telegram Pre-Alert",
+          "type": "n8n-nodes-base.telegram",
+          "typeVersion": 1.2,
+          "position": [
+            0,
+            0
+          ],
+          "webhookId": "344cb592-52ce-48e8-93db-7ade48a16b8f",
+          "credentials": {
+            "telegramApi": {
+              "id": "kvnsgPyqexz5KHTc",
+              "name": "Telegram account"
+            }
+          },
+          "disabled": true,
+          "onError": "continueRegularOutput"
+        },
+        {
+          "parameters": {
+            "conditions": {
+              "options": {
+                "caseSensitive": true,
+                "leftValue": "",
+                "typeValidation": "loose",
+                "version": 2
+              },
+              "conditions": [
+                {
+                  "id": "c95585f1-68b1-4ba4-8c7f-6410e95f37bd",
+                  "leftValue": "={{ $json[\"routeMode\"] }}",
+                  "rightValue": "alpine_vpn_only",
+                  "operator": {
+                    "type": "string",
+                    "operation": "equals"
+                  }
+                }
+              ],
+              "combinator": "and"
+            },
+            "options": {}
+          },
+          "id": "f60968e4-452f-4578-a723-2f7bc1d91282",
+          "name": "Route To Alpine Only?",
+          "type": "n8n-nodes-base.if",
+          "typeVersion": 2.2,
+          "position": [
+            0,
+            160
+          ]
+        },
+        {
+          "parameters": {
+            "url": "={{ (($json['fallbackBaseUrl'] || $('Analyze Email + Extract Link').itemMatching(0).json['fallbackBaseUrl']) || ($env.SURVEYS_GCLAW_FALLBACK_BASE_URL || 'http://100.113.140.25:18790')) + '/v1/agents' }}",
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer ={{ $env.SURVEYS_GCLAW_FALLBACK_TOKEN || $env.GOCLAW_GATEWAY_TOKEN }}"
+                },
+                {
+                  "name": "X-GoClaw-User-Id",
+                  "value": "system"
+                },
+                {
+                  "name": "Accept",
+                  "value": "application/json"
+                }
+              ]
+            },
+            "options": {
+              "timeout": 30000
+            }
+          },
+          "id": "adf3a939-a03b-4edf-b667-a25ee5bfe417",
+          "name": "List Fallback GoClaw Agents",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4.2,
+          "position": [
+            880,
+            288
+          ],
+          "onError": "continueRegularOutput"
+        },
+        {
+          "parameters": {
+            "mode": "runOnceForEachItem",
+            "jsCode": "const source = $('Analyze Email + Extract Link').itemMatching(0).json;\nconst resp = $json || {};\n\nconst asText = (value) => {\n  if (!value) return '';\n  if (typeof value === 'string') return value;\n  if (typeof value.message === 'string') return value.message;\n  if (typeof value.description === 'string') return value.description;\n  try { return JSON.stringify(value); } catch { return String(value); }\n};\n\nconst items = Array.isArray(resp.data)\n  ? resp.data\n  : Array.isArray(resp.agents)\n    ? resp.agents\n    : Array.isArray(resp.body?.data)\n      ? resp.body.data\n      : Array.isArray(resp.body?.agents)\n        ? resp.body.agents\n        : [];\n\nconst surveysAgent = items.find((agent) => {\n  if (!agent || typeof agent !== 'object') return false;\n  const id = String(agent.id || '').toLowerCase();\n  const slug = String(agent.slug || '').toLowerCase();\n  const name = String(agent.name || '').toLowerCase();\n  const agentKey = String(agent.agent_key || '').toLowerCase();\n  const displayName = String(agent.display_name || '').toLowerCase();\n  const model = String(agent.model || '').toLowerCase();\n  return id === 'surveys' || slug === 'surveys' || name === 'surveys' || agentKey === 'surveys' || displayName === 'surveys' || model === 'goclaw:surveys';\n});\n\nconst fallbackAvailable = Boolean(surveysAgent);\nconst failureReason = fallbackAvailable\n  ? ''\n  : asText(resp.error) || asText(resp.body?.error) || asText(resp.message) || 'Alpine GoClaw did not return a surveys agent.';\nconst executionHostLabel = source.routeMode === 'alpine_vpn_only' ? 'Alpine Swiss-VPN primary' : 'Alpine fallback';\n\nconst noAgentTelegramText = [\n  source.routeMode === 'alpine_vpn_only'\n    ? '⚠️ Alpine Swiss-VPN path не готовий до запуску surveys для цього recipient.'\n    : '⚠️ Ні primary, ні fallback GoClaw не готові до запуску surveys.',\n  `👤 Для: ${source.accountName || 'невідомо'}`,\n  `📨 Тема: ${source.subject || 'без теми'}`,\n  `🔗 Candidate link: ${source.taskLink || 'не знайдено'}`,\n  source.routeMode === 'alpine_vpn_only'\n    ? `🧯 Alpine reason: ${failureReason || 'surveys agent missing on Alpine'}`\n    : `🖥 Primary reason: ${source.primaryFailureReason || 'primary unavailable'}`,\n  source.routeMode === 'alpine_vpn_only'\n    ? '👉 Що зробити: перевірити Swiss VPN route на Alpine. Mac не повинен відкривати цю задачу.'\n    : `🧯 Fallback reason: ${failureReason || 'surveys agent missing on Alpine'}`,\n].join('\\n');\n\nreturn {\n  json: {\n    ...source,\n    fallbackAgentsResponseRaw: resp,\n    executionHost: 'alpine',\n    executionHostLabel,\n    selectedGoClawAgent: surveysAgent?.id || 'surveys',\n    fallbackAvailable,\n    fallbackFailureReason: failureReason,\n    goclawRunnableRequestBody: source.fallbackGoclawRequestBody,\n    noAgentTelegramText,\n  },\n};\n"
+          },
+          "id": "7fdbde44-fcc9-494f-a498-df1edc5d8976",
+          "name": "Prepare Fallback GoClaw Request",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            1104,
+            288
+          ]
+        },
+        {
+          "parameters": {
+            "conditions": {
+              "options": {
+                "caseSensitive": true,
+                "leftValue": "",
+                "typeValidation": "loose",
+                "version": 2
+              },
+              "conditions": [
+                {
+                  "id": "0d5ea2e3-48c3-4a2a-bef0-e3d7fe96dc55",
+                  "leftValue": "={{ $json[\"fallbackAvailable\"] }}",
+                  "rightValue": "",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true",
+                    "singleValue": true
+                  }
+                }
+              ],
+              "combinator": "and"
+            },
+            "options": {}
+          },
+          "id": "6a70ea9a-d7ba-4207-8ae7-c1f4f28f9bbe",
+          "name": "Fallback GoClaw Available?",
+          "type": "n8n-nodes-base.if",
+          "typeVersion": 2.2,
+          "position": [
+            1328,
+            288
+          ]
+        },
+        {
+          "parameters": {
+            "method": "POST",
+            "url": "={{ ($json['fallbackBaseUrl'] || ($env.SURVEYS_GCLAW_FALLBACK_BASE_URL || 'http://100.113.140.25:18790')) + '/v1/responses' }}",
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer ={{ $env.SURVEYS_GCLAW_FALLBACK_TOKEN || $env.GOCLAW_GATEWAY_TOKEN }}"
+                },
+                {
+                  "name": "X-GoClaw-User-Id",
+                  "value": "system"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "name": "Accept",
+                  "value": "application/json"
+                }
+              ]
+            },
+            "sendBody": true,
+            "specifyBody": "json",
+            "jsonBody": "={{ $json[\"goclawRunnableRequestBody\"] }}",
+            "options": {
+              "timeout": 600000
+            }
+          },
+          "id": "fc4279d3-95a4-488a-bcd9-2e4a411a8811",
+          "name": "Fallback GoClaw Responses API",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4.2,
+          "position": [
+            1552,
+            224
+          ],
+          "onError": "continueRegularOutput"
+        },
+        {
+          "parameters": {
+            "mode": "runOnceForEachItem",
+            "jsCode": "const source = $('Analyze Email + Extract Link').itemMatching(0).json;\nconst resp = $json || {};\n\nconst pickRawText = (obj) => {\n  if (typeof obj.output_text === 'string' && obj.output_text.trim()) return obj.output_text.trim();\n  if (typeof obj.text === 'string' && obj.text.trim()) return obj.text.trim();\n  if (typeof obj.response?.output_text === 'string' && obj.response.output_text.trim()) return obj.response.output_text.trim();\n\n  const collected = [];\n  const visit = (value) => {\n    if (!value) return;\n    if (typeof value === 'string') {\n      const trimmed = value.trim();\n      if (trimmed) collected.push(trimmed);\n      return;\n    }\n    if (Array.isArray(value)) {\n      for (const item of value) visit(item);\n      return;\n    }\n    if (typeof value === 'object') {\n      if (typeof value.text === 'string') collected.push(value.text.trim());\n      if (typeof value.output_text === 'string') collected.push(value.output_text.trim());\n      if (value.content) visit(value.content);\n      if (value.output) visit(value.output);\n      if (value.result) visit(value.result);\n      if (value.response) visit(value.response);\n      if (value.data) visit(value.data);\n    }\n  };\n\n  visit(obj.output);\n  visit(obj.result);\n  visit(obj.response);\n  visit(obj.data);\n\n  return collected.filter(Boolean).join('\\n').trim();\n};\n\nconst extractJson = (raw) => {\n  if (!raw || typeof raw !== 'string') return null;\n  const fenced = raw.match(/```(?:json)?\\s*([\\s\\S]*?)```/i);\n  const candidate = fenced ? fenced[1] : raw;\n  const direct = candidate.trim();\n  try { return JSON.parse(direct); } catch {}\n  const first = candidate.indexOf('{');\n  const last = candidate.lastIndexOf('}');\n  if (first >= 0 && last > first) {\n    const sliced = candidate.slice(first, last + 1);\n    try { return JSON.parse(sliced); } catch {}\n  }\n  return null;\n};\n\nconst toPercent = (value) => {\n  if (typeof value !== 'number' || !Number.isFinite(value)) return '';\n  return `${Math.round(value * 100)}%`;\n};\n\nconst summarizeReason = (status, reason, rawText) => {\n  const combined = `${reason || ''} ${rawText || ''}`.toLowerCase();\n  if (status === 'not_a_task') {\n    if (/beehiiv/.test(combined)) return 'розсилка beehiiv';\n    if (/newsletter/.test(combined)) return 'інформаційна розсилка';\n    if (/not survey/.test(combined) || /not a task/.test(combined)) return 'це не опитування';\n  }\n  if (status === 'completed') return 'завершено';\n  if (status === 'screened_out') return 'відсіяно';\n  if (status === 'vpn_failed') return 'VPN не активний';\n  if (status === 'failed') return 'виконання завершилось помилкою';\n  if (status === 'task_unavailable') return 'задача недоступна';\n  if (status === 'needs_manual_review') return 'потрібна ручна перевірка';\n  if (status === 'agent_error') return 'GoClaw не зміг коректно обробити лист';\n  return reason || '';\n};\n\nconst shouldAppendReason = (status, summary) => {\n  if (!summary) return false;\n  const normalized = summary.trim().toLowerCase();\n  if (status === 'needs_manual_review' && normalized === 'потрібна ручна перевірка') return false;\n  if (status === 'task_unavailable' && normalized === 'задача недоступна') return false;\n  if (status === 'agent_error' && normalized === 'goclaw не зміг коректно обробити лист') return false;\n  return true;\n};\n\nconst rawText = pickRawText(resp);\nconst parsed = extractJson(rawText);\n\nlet status = 'agent_error';\nlet taskConfirmed = false;\nlet openedTask = false;\nlet taskLink = source.taskLink || '';\nlet handoffLink = source.taskLink || '';\nlet reason = 'GoClaw did not return valid strict JSON.';\nlet nextAction = 'manual_review';\nlet pageTitle = '';\nlet reward = source.reward || 'невідомо';\nlet duration = source.duration || 'невідомо';\nlet portalMismatch = null;\nlet confidence = null;\n\nif (parsed && typeof parsed === 'object') {\n  status = parsed.status || (parsed.taskConfirmed ? 'ready_for_handoff' : 'needs_manual_review');\n  taskConfirmed = Boolean(parsed.taskConfirmed);\n  openedTask = Boolean(parsed.openedTask);\n  taskLink = parsed.taskLink || taskLink;\n  handoffLink = parsed.handoffLink || parsed.resumeUrl || parsed.currentUrl || taskLink;\n  reason = parsed.reason || reason;\n  nextAction = parsed.nextAction || nextAction;\n  pageTitle = parsed.pageTitle || parsed.title || '';\n  reward = parsed.reward || reward;\n  duration = parsed.duration || duration;\n  portalMismatch = Object.prototype.hasOwnProperty.call(parsed, 'portalMismatch') ? parsed.portalMismatch : portalMismatch;\n  confidence = typeof parsed.confidence === 'number' ? parsed.confidence : confidence;\n}\n\n// --- Whitelist safety net: if Analyze marked taskConfirmed but agent still\n//     refused with needs_manual_review, escalate to task_unavailable so we\n//     don't tell the user to do whitelisted surveys manually.\nif (source.taskConfirmed === true && status === 'needs_manual_review') {\n  status = 'task_unavailable';\n  reason = `Whitelist autorun (${source.whitelistMatch || 'meinungsplatz_autorun'}) but agent refused: ${reason || 'no detail'}`;\n  nextAction = 'auto_retry';\n}\n\nconst hostLabel = $input.item.json.executionHostLabel || source.executionHostLabel || (source.routeMode === 'alpine_vpn_only' ? 'Alpine' : 'Mac');\nconst confidenceText = toPercent(confidence);\nconst reasonSummary = summarizeReason(status, reason, rawText);\n\nconst htmlEscape = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst quoteSubject = source.subject ? `\"${htmlEscape(source.subject)}\"` : '\"без теми\"';\nlet lines = [\n  `📨 Лист: ${quoteSubject}`,\n  `👤 Від: ${htmlEscape(source.fromDisplay || 'невідомо')}`,\n  `🧭 Для: ${source.accountName || 'невідомо'}`,\n];\n\nif (status === 'not_a_task') {\n  lines.push(`⚪️ Не задача${reasonSummary ? ` — ${reasonSummary}` : ''}${confidenceText ? ` (впевненість ${confidenceText})` : ''}`);\n  lines.push('🗑 Відхилено');\n} else if (status === 'ready_for_handoff') {\n  lines.push(`✅ Задача підтверджена${confidenceText ? ` (впевненість ${confidenceText})` : ''}`);\n  lines.push(`🖥 Маршрут: ${hostLabel}`);\n  if (reward && reward !== 'невідомо') lines.push(`💰 ${reward}`);\n  if (duration && duration !== 'невідомо') lines.push(`⏱ ${duration}`);\n  if (handoffLink) lines.push(`🔗 Handoff: ${htmlEscape(handoffLink)}`);\n} else if (status === 'needs_manual_review') {\n  lines.push(`🟡 Потрібна ручна перевірка${shouldAppendReason(status, reasonSummary) ? ` — ${reasonSummary}` : ''}${confidenceText ? ` (впевненість ${confidenceText})` : ''}`);\n  if (reward && reward !== 'невідомо') lines.push(`💰 ${reward}`);\n  if (duration && duration !== 'невідомо') lines.push(`⏱ ${duration}`);\n  if (taskLink) lines.push(`🔗 Лінк: ${htmlEscape(taskLink)}`);\n} else if (status === 'completed') {\n  lines.push('✅ Опитування завершено');\n  if (reward && reward !== 'невідомо') lines.push(`💰 Нагорода: ${reward}`);\n} else if (status === 'screened_out') {\n  lines.push('🚫 Відсіяно (screened out)');\n  if (reward && reward !== 'невідомо') lines.push(`💰 ${reward}`);\n} else if (status === 'vpn_failed') {\n  lines.push('🔴 VPN не активний — Swiss IP не підтверджено (не CH)');\n} else if (status === 'failed') {\n  lines.push(`🔴 Виконання завершилось помилкою${shouldAppendReason(status, reasonSummary) ? ` — ${reasonSummary}` : ''}`);\n  if (reward && reward !== 'невідомо') lines.push(`💰 ${reward}`);\n} else if (status === 'task_unavailable') {\n  lines.push(`🔴 Задача недоступна${shouldAppendReason(status, reasonSummary) ? ` — ${reasonSummary}` : ''}${confidenceText ? ` (впевненість ${confidenceText})` : ''}`);\n  if (reward && reward !== 'невідомо') lines.push(`💰 ${reward}`);\n  if (duration && duration !== 'невідомо') lines.push(`⏱ ${duration}`);\n  if (taskLink) lines.push(`🔗 Лінк: ${htmlEscape(taskLink)}`);\n} else {\n  lines.push(`⚠️ Помилка обробки${shouldAppendReason(status, reasonSummary) ? ` — ${reasonSummary}` : ''}`);\n  if (reward && reward !== 'невідомо') lines.push(`💰 ${reward}`);\n  if (duration && duration !== 'невідомо') lines.push(`⏱ ${duration}`);\n  if (taskLink) lines.push(`🔗 Лінк: ${htmlEscape(taskLink)}`);\n}\n\nif (pageTitle && status === 'ready_for_handoff') lines.push(`🪟 Сторінка: ${htmlEscape(pageTitle)}`);\nif (portalMismatch === true) lines.push('🧭 Увага: відкрито інший портал');\n\nreturn {\n  json: {\n    ...source,\n    ...$input.item.json,\n    executionHostLabel: hostLabel,\n    goclawRawResponse: resp,\n    goclawRawText: rawText,\n    goclawParsed: parsed,\n    goclawStatus: status,\n    taskConfirmed,\n    openedTask,\n    finalTaskLink: taskLink,\n    handoffLink,\n    portalMismatch,\n    goclawReason: reason,\n    goclawNextAction: nextAction,\n    telegramText: lines.filter(Boolean).join('\\n'),\n  },\n};\n"
+          },
+          "id": "83df55a6-f3db-4301-ae72-97df5c6af439",
+          "name": "Compose Final Alert",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            1104,
+            64
+          ]
+        },
+        {
+          "parameters": {
+            "chatId": "={{ $env.SURVEYS_TELEGRAM_CHAT_ID || '-4964233423' }}",
+            "text": "={{ $json[\"workflowMarker\"] ? ('NEW-WF FINAL ' + $json[\"workflowMarker\"] + ' host=' + ($json[\"executionHostLabel\"] || 'unknown') + ' status=' + ($json[\"goclawStatus\"] || 'unknown') + ' opened=' + ($json[\"openedTask\"] ? 'yes' : 'no')) : $json[\"telegramText\"] }}",
+            "additionalFields": {
+              "appendAttribution": false,
+              "disable_web_page_preview": true,
+              "parse_mode": "HTML"
+            }
+          },
+          "id": "de76cdcd-5b7c-4e54-bbab-985485d09ea0",
+          "name": "Telegram Alert",
+          "type": "n8n-nodes-base.telegram",
+          "typeVersion": 1.2,
+          "position": [
+            1328,
+            64
+          ],
+          "webhookId": "7a0b54ee-e8cc-4c4e-8317-d568b8686bd0",
+          "credentials": {
+            "telegramApi": {
+              "id": "kvnsgPyqexz5KHTc",
+              "name": "Telegram account"
+            }
+          }
+        },
+        {
+          "parameters": {
+            "chatId": "={{ $env.SURVEYS_TELEGRAM_CHAT_ID || '-4964233423' }}",
+            "text": "={{ $json[\"workflowMarker\"] ? ('NEW-WF NOAGENT ' + $json[\"workflowMarker\"] + ' primary=' + ($json[\"primaryFailureReason\"] || 'none') + ' fallback=' + ($json[\"fallbackFailureReason\"] || 'none')) : $json[\"noAgentTelegramText\"] }}",
+            "additionalFields": {
+              "appendAttribution": false,
+              "disable_web_page_preview": true,
+              "parse_mode": "HTML"
+            }
+          },
+          "id": "04e89840-ea78-47ca-84cc-59dd8c0fc5fb",
+          "name": "Telegram No-Agent Alert",
+          "type": "n8n-nodes-base.telegram",
+          "typeVersion": 1.2,
+          "position": [
+            880,
+            288
+          ],
+          "webhookId": "0343e705-ae04-462c-aad0-fc08711a8139",
+          "credentials": {
+            "telegramApi": {
+              "id": "kvnsgPyqexz5KHTc",
+              "name": "Telegram account"
+            }
+          }
+        },
+        {
+          "parameters": {
+            "url": "={{ (($json['primaryBaseUrl'] || $('Analyze Email + Extract Link').itemMatching(0).json['primaryBaseUrl']) || ($env.SURVEYS_GCLAW_PRIMARY_BASE_URL || 'http://100.84.163.96:18790')) + '/v1/agents' }}",
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer ={{ $env.SURVEYS_GCLAW_PRIMARY_TOKEN }}"
+                },
+                {
+                  "name": "X-GoClaw-User-Id",
+                  "value": "system"
+                },
+                {
+                  "name": "Accept",
+                  "value": "application/json"
+                }
+              ]
+            },
+            "options": {
+              "timeout": 30000
+            }
+          },
+          "id": "de24ebf6-7a70-49db-8077-142531243a53",
+          "name": "List Primary GoClaw Agents",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4.2,
+          "position": [
+            224,
+            160
+          ],
+          "onError": "continueRegularOutput"
+        },
+        {
+          "parameters": {
+            "mode": "runOnceForEachItem",
+            "jsCode": "const source = $('Analyze Email + Extract Link').itemMatching(0).json;\nconst resp = $json || {};\n\nconst asText = (value) => {\n  if (!value) return '';\n  if (typeof value === 'string') return value;\n  if (typeof value.message === 'string') return value.message;\n  if (typeof value.description === 'string') return value.description;\n  try { return JSON.stringify(value); } catch { return String(value); }\n};\n\nconst items = Array.isArray(resp.data)\n  ? resp.data\n  : Array.isArray(resp.agents)\n    ? resp.agents\n    : Array.isArray(resp.body?.data)\n      ? resp.body.data\n      : Array.isArray(resp.body?.agents)\n        ? resp.body.agents\n        : [];\n\nconst surveysAgent = items.find((agent) => {\n  if (!agent || typeof agent !== 'object') return false;\n  const id = String(agent.id || '').toLowerCase();\n  const slug = String(agent.slug || '').toLowerCase();\n  const name = String(agent.name || '').toLowerCase();\n  const agentKey = String(agent.agent_key || '').toLowerCase();\n  const displayName = String(agent.display_name || '').toLowerCase();\n  const model = String(agent.model || '').toLowerCase();\n  return id === 'surveys' || slug === 'surveys' || name === 'surveys' || agentKey === 'surveys' || displayName === 'surveys' || model === 'goclaw:surveys';\n});\n\nconst primaryAvailable = Boolean(surveysAgent);\nconst failureReason = primaryAvailable\n  ? ''\n  : asText(resp.error) || asText(resp.body?.error) || asText(resp.message) || 'Mac GoClaw did not return a surveys agent.';\n\nconst noAgentTelegramText = [\n  '⚠️ Ні primary, ні fallback GoClaw не готові до запуску surveys.',\n  `👤 Для: ${source.accountName || 'невідомо'}`,\n  `📨 Тема: ${source.subject || 'без теми'}`,\n  `🔗 Candidate link: ${source.taskLink || 'не знайдено'}`,\n  `🖥 Primary reason: ${failureReason || 'surveys agent missing on Mac'}`,\n  '👉 Що зробити: перевірити Mac/Alpine GoClaw і відкрити задачу вручну за candidate link.',\n].join('\\n');\n\nreturn {\n  json: {\n    ...source,\n    primaryAgentsResponse: resp,\n    executionHost: 'mac',\n    executionHostLabel: 'Mac primary',\n    selectedGoClawAgent: surveysAgent?.id || 'surveys',\n    primaryAvailable,\n    primaryFailureReason: failureReason,\n    goclawRunnableRequestBody: source.primaryGoclawRequestBody,\n    noAgentTelegramText,\n  },\n};"
+          },
+          "id": "64a5e454-40b1-49a8-8624-962e451685be",
+          "name": "Prepare Primary GoClaw Request",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            448,
+            160
+          ]
+        },
+        {
+          "parameters": {
+            "conditions": {
+              "options": {
+                "caseSensitive": true,
+                "leftValue": "",
+                "typeValidation": "loose",
+                "version": 2
+              },
+              "conditions": [
+                {
+                  "id": "b027c7ec-d482-4a07-a0d8-c795bb50be66",
+                  "leftValue": "={{ $json[\"primaryAvailable\"] }}",
+                  "rightValue": "",
+                  "operator": {
+                    "type": "boolean",
+                    "operation": "true",
+                    "singleValue": true
+                  }
+                }
+              ],
+              "combinator": "and"
+            },
+            "options": {}
+          },
+          "id": "61141368-04a3-4c7e-b9a1-5bfd6c731e84",
+          "name": "Primary GoClaw Available?",
+          "type": "n8n-nodes-base.if",
+          "typeVersion": 2.2,
+          "position": [
+            672,
+            160
+          ]
+        },
+        {
+          "parameters": {
+            "method": "POST",
+            "url": "={{ ($json['primaryBaseUrl'] || ($env.SURVEYS_GCLAW_PRIMARY_BASE_URL || 'http://100.84.163.96:18790')) + '/v1/responses' }}",
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "Bearer ={{ $env.SURVEYS_GCLAW_PRIMARY_TOKEN }}"
+                },
+                {
+                  "name": "X-GoClaw-User-Id",
+                  "value": "system"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "name": "Accept",
+                  "value": "application/json"
+                }
+              ]
+            },
+            "sendBody": true,
+            "specifyBody": "json",
+            "jsonBody": "={{ $json[\"goclawRunnableRequestBody\"] }}",
+            "options": {
+              "timeout": 600000
+            }
+          },
+          "id": "a5715532-9224-4aeb-b5d0-fe183a8eba4d",
+          "name": "Primary GoClaw Responses API",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4.2,
+          "position": [
+            880,
+            64
+          ],
+          "onError": "continueRegularOutput"
+        },
+        {
+          "parameters": {
+            "conditions": {
+              "options": {
+                "caseSensitive": true,
+                "leftValue": "",
+                "typeValidation": "loose",
+                "version": 2
+              },
+              "conditions": [
+                {
+                  "leftValue": "={{ JSON.stringify($json) }}",
+                  "rightValue": "Browser tool unavailable",
+                  "operator": {
+                    "type": "string",
+                    "operation": "contains"
+                  }
+                }
+              ],
+              "combinator": "and"
+            },
+            "options": {}
+          },
+          "id": "9c7f0a1b-3f78-4c4f-9e8b-b3d2f0d03f41",
+          "name": "Primary Browser Fallback?",
+          "type": "n8n-nodes-base.if",
+          "typeVersion": 2.2,
+          "position": [
+            1104,
+            64
+          ]
+        }
+      ],
+      "connections": {
+        "Gmail Task Monitor": {
+          "main": [
+            [
+              {
+                "node": "Analyze Email + Extract Link",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Analyze Email + Extract Link": {
+          "main": [
+            [
+              {
+                "node": "Should Invoke GoClaw?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "E2E Test Webhook": {
+          "main": [
+            [
+              {
+                "node": "Normalize Test Payload",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Normalize Test Payload": {
+          "main": [
+            [
+              {
+                "node": "Analyze Email + Extract Link",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Should Invoke GoClaw?": {
+          "main": [
+            [
+              {
+                "node": "Telegram Pre-Alert",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Telegram Pre-Alert": {
+          "main": [
+            [
+              {
+                "node": "Route To Alpine Only?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Route To Alpine Only?": {
+          "main": [
+            [
+              {
+                "node": "List Fallback GoClaw Agents",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "List Primary GoClaw Agents",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "List Fallback GoClaw Agents": {
+          "main": [
+            [
+              {
+                "node": "Prepare Fallback GoClaw Request",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Prepare Fallback GoClaw Request": {
+          "main": [
+            [
+              {
+                "node": "Fallback GoClaw Available?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Fallback GoClaw Available?": {
+          "main": [
+            [
+              {
+                "node": "Fallback GoClaw Responses API",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Telegram No-Agent Alert",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Fallback GoClaw Responses API": {
+          "main": [
+            [
+              {
+                "node": "Compose Final Alert",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Compose Final Alert": {
+          "main": [
+            [
+              {
+                "node": "Telegram Alert",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "List Primary GoClaw Agents": {
+          "main": [
+            [
+              {
+                "node": "Prepare Primary GoClaw Request",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Prepare Primary GoClaw Request": {
+          "main": [
+            [
+              {
+                "node": "Primary GoClaw Available?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Primary GoClaw Available?": {
+          "main": [
+            [
+              {
+                "node": "Primary GoClaw Responses API",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "List Fallback GoClaw Agents",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Primary GoClaw Responses API": {
+          "main": [
+            [
+              {
+                "node": "Primary Browser Fallback?",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Should Invoke GoClaw": {
+          "main": [
+            [
+              {
+                "node": "Route To Alpine Only?"
+              }
+            ]
+          ]
+        },
+        "Primary Browser Fallback?": {
+          "main": [
+            [
+              {
+                "node": "List Fallback GoClaw Agents",
+                "type": "main",
+                "index": 0
+              }
+            ],
+            [
+              {
+                "node": "Compose Final Alert",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      },
+      "authors": "Volodymyr Kovalenko",
+      "name": null,
+      "description": null,
+      "autosaved": false,
+      "workflowPublishHistory": [
+        {
+          "createdAt": "2026-04-18T02:39:01.180Z",
+          "id": 84,
+          "workflowId": "c4gZHN2sl3UMvkTs",
+          "versionId": "18f90b8f-919b-4571-9210-b01fdec1a09d",
+          "event": "deactivated",
+          "userId": "ab8525fc-0b0a-43d5-bbf1-6f2d60bcc73e"
+        },
+        {
+          "createdAt": "2026-04-18T02:39:02.679Z",
+          "id": 85,
+          "workflowId": "c4gZHN2sl3UMvkTs",
+          "versionId": "18f90b8f-919b-4571-9210-b01fdec1a09d",
+          "event": "activated",
+          "userId": "ab8525fc-0b0a-43d5-bbf1-6f2d60bcc73e"
+        }
+      ]
+    }
+  }
+}
