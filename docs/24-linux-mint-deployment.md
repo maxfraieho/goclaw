@@ -21,6 +21,7 @@ Agents may differ on the target host.
 - `deploy/systemd/goclaw.service`
 - `deploy/systemd/pinchtab.service`
 - `deploy/pinchtab/config.linux-mint.example.json`
+- `deploy/pinchtab/chrome-swiss-proxy.sh`
 
 ## What to do on the new server
 
@@ -101,6 +102,7 @@ Example service files are included in:
 The PinchTab host config template is included in:
 
 - `deploy/pinchtab/config.linux-mint.example.json`
+- `deploy/pinchtab/chrome-swiss-proxy.sh`
 
 ## Checks
 
