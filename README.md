@@ -218,6 +218,52 @@ When `GOCLAW_*_API_KEY` environment variables are set, the gateway auto-onboards
 > For custom builds (Tailscale, Redis): `docker build --build-arg ENABLE_TSNET=true ...`
 > See the [Deployment Guide](https://docs.goclaw.sh/#deploy-docker-compose) for details.
 
+## Scenario Entry Points
+
+Two repo-local entry points are maintained for the deployment flows used on this installation line:
+
+### 1. Linux Mint deployment
+
+Use these files when you want to bring up another machine as a close copy of the current working host:
+
+- [docs/24-linux-mint-deployment.md](/home/vokov/projects/goclaw/docs/24-linux-mint-deployment.md)
+- [docs/reports/goclaw_pinchtab_linux_mint_handoff_2026-04-23.md](/home/vokov/projects/goclaw/docs/reports/goclaw_pinchtab_linux_mint_handoff_2026-04-23.md)
+- [docs/proxy/PROXY-SETUP.md](/home/vokov/projects/goclaw/docs/proxy/PROXY-SETUP.md)
+- [.env.local.example](/home/vokov/projects/goclaw/.env.local.example)
+- [deploy/systemd/goclaw.service](/home/vokov/projects/goclaw/deploy/systemd/goclaw.service)
+- [deploy/systemd/pinchtab.service](/home/vokov/projects/goclaw/deploy/systemd/pinchtab.service)
+- [deploy/pinchtab/config.linux-mint.example.json](/home/vokov/projects/goclaw/deploy/pinchtab/config.linux-mint.example.json)
+- [deploy/pinchtab/chrome-swiss-proxy.sh](/home/vokov/projects/goclaw/deploy/pinchtab/chrome-swiss-proxy.sh)
+
+This path covers:
+
+- `goclaw`
+- `PinchTab`
+- Swiss proxy behavior matching this machine
+- local `Claude CLI`
+
+### 2. Repository update + analysis on another machine
+
+Use this path when another machine, such as an `RPI 3B` with a working Claude account, should:
+
+1. run `git pull`
+2. update the repo
+3. continue analysis / development for the `menpalace` workflow line
+
+Relevant files:
+
+- [n8n/workflows/zavdannya-na-opituvannya-z-shi/README.md](/home/vokov/projects/goclaw/n8n/workflows/zavdannya-na-opituvannya-z-shi/README.md)
+- [n8n/workflows/zavdannya-na-opituvannya-z-shi/workflow.json](/home/vokov/projects/goclaw/n8n/workflows/zavdannya-na-opituvannya-z-shi/workflow.json)
+- [n8n/workflows/zavdannya-na-opituvannya-z-shi/.env.example](/home/vokov/projects/goclaw/n8n/workflows/zavdannya-na-opituvannya-z-shi/.env.example)
+- [docs/02-providers.md](/home/vokov/projects/goclaw/docs/02-providers.md)
+- [docs/proxy/PROXY-SETUP.md](/home/vokov/projects/goclaw/docs/proxy/PROXY-SETUP.md)
+
+This path assumes:
+
+- `claude` is already installed on the target machine
+- the Claude account is already logged in there
+- the machine will import the exported `n8n` workflow and reattach its local credentials
+
 ## Updating
 
 ### Docker
