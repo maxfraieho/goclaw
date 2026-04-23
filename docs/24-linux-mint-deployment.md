@@ -17,6 +17,10 @@ Agents may differ on the target host.
 - `docs/reports/goclaw_pinchtab_linux_mint_handoff_2026-04-23.md`
 - `docs/proxy/PROXY-SETUP.md`
 - `start-goclaw.sh`
+- `.env.local.example`
+- `deploy/systemd/goclaw.service`
+- `deploy/systemd/pinchtab.service`
+- `deploy/pinchtab/config.linux-mint.example.json`
 
 ## What to do on the new server
 
@@ -30,6 +34,12 @@ Agents may differ on the target host.
 8. Start it with `start-goclaw.sh` or an equivalent service wrapper.
 
 ## Required env
+
+Use this template as the starting point:
+
+```sh
+cp .env.local.example .env.local
+```
 
 Minimum browser env:
 
@@ -80,6 +90,17 @@ go build -o goclaw .
 - repo: `/home/vokov/projects/goclaw`
 - env file: `/home/vokov/projects/goclaw/.env.local`
 - binary: `/home/vokov/projects/goclaw/goclaw`
+
+## Service files
+
+Example service files are included in:
+
+- `deploy/systemd/goclaw.service`
+- `deploy/systemd/pinchtab.service`
+
+The PinchTab host config template is included in:
+
+- `deploy/pinchtab/config.linux-mint.example.json`
 
 ## Checks
 

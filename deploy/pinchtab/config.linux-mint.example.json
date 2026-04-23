@@ -1,0 +1,71 @@
+{
+  "configVersion": "0.8.0",
+  "server": {
+    "port": "9867",
+    "bind": "127.0.0.1",
+    "token": "replace-with-pinchtab-token",
+    "stateDir": "/home/vokov/.pinchtab",
+    "engine": ""
+  },
+  "browser": {
+    "binary": "/home/vokov/.pinchtab/chrome-swiss-proxy.sh",
+    "extraFlags": "--disable-webrtc --force-fieldtrials=*WebRTCDisableIPv6/default --disable-geolocation --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-features=CalculateNativeWinOcclusion --disable-hang-monitor --disable-dev-shm-usage --disable-gpu --no-first-run --no-default-browser-check --disable-client-side-phishing-detection --disable-extensions --disable-sync --lang=de-CH --accept-lang=de-CH,de,en"
+  },
+  "instanceDefaults": {
+    "mode": "head",
+    "maxTabs": 20,
+    "stealthLevel": "light",
+    "tabEvictionPolicy": "close_lru"
+  },
+  "security": {
+    "allowEvaluate": true,
+    "allowMacro": true,
+    "allowScreencast": true,
+    "allowDownload": true,
+    "allowUpload": true,
+    "allowClipboard": true,
+    "maxRedirects": -1,
+    "attach": {
+      "enabled": false,
+      "allowHosts": [
+        "127.0.0.1",
+        "localhost",
+        "::1"
+      ],
+      "allowSchemes": [
+        "ws",
+        "wss"
+      ]
+    },
+    "idpi": {
+      "enabled": false,
+      "allowedDomains": [
+        "127.0.0.1",
+        "localhost",
+        "::1",
+        "*"
+      ],
+      "strictMode": false,
+      "scanContent": false,
+      "wrapContent": false,
+      "customPatterns": [],
+      "scanTimeoutSec": 5
+    }
+  },
+  "profiles": {
+    "baseDir": "/home/vokov/.pinchtab/profiles",
+    "defaultProfile": "default"
+  },
+  "multiInstance": {
+    "strategy": "always-on",
+    "allocationPolicy": "fcfs",
+    "instancePortStart": 9868,
+    "instancePortEnd": 9968
+  },
+  "timeouts": {
+    "actionSec": 30,
+    "navigateSec": 60,
+    "shutdownSec": 10,
+    "waitNavMs": 1000
+  }
+}

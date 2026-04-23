@@ -1,0 +1,16 @@
+[Unit]
+Description=GoClaw Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/vokov/projects/goclaw
+ExecStart=/home/vokov/projects/goclaw/start-goclaw.sh
+Restart=always
+RestartSec=5
+User=vokov
+Group=vokov
+
+[Install]
+WantedBy=multi-user.target

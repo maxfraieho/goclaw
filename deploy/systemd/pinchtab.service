@@ -1,0 +1,15 @@
+[Unit]
+Description=PinchTab User Daemon
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=/home/vokov/.local/bin/pinchtab daemon start
+Restart=always
+RestartSec=5
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/vokov/.Xauthority
+Environment=PINCHTAB_CONFIG=/home/vokov/.pinchtab/config.json
+
+[Install]
+WantedBy=default.target
