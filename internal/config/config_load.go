@@ -275,8 +275,13 @@ func (c *Config) applyEnvOverrides() {
 	if c.Tools.Browser.RemoteURL != "" {
 		c.Tools.Browser.Enabled = true
 	}
+	// PinchTab: token-efficient browser automation via local daemon.
+	envStr("GOCLAW_BROWSER_PINCHTAB_URL", &c.Tools.Browser.PinchTabURL)
+	if c.Tools.Browser.PinchTabURL != "" {
+		c.Tools.Browser.Enabled = true
+	}
+	envStr("GOCLAW_BROWSER_PINCHTAB_TOKEN", &c.Tools.Browser.PinchTabToken)
 }
-
 
 // Save writes the config to a JSON file.
 func Save(path string, cfg *Config) error {

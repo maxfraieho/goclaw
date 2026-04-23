@@ -14,11 +14,11 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/bootstrap"
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
+	"github.com/nextlevelbuilder/goclaw/internal/edition"
 	mcpbridge "github.com/nextlevelbuilder/goclaw/internal/mcp"
 	"github.com/nextlevelbuilder/goclaw/internal/permissions"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/sandbox"
-	"github.com/nextlevelbuilder/goclaw/internal/edition"
 	"github.com/nextlevelbuilder/goclaw/internal/skills"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/store/pg"
@@ -93,28 +93,38 @@ func setupToolRegistry(
 
 	// Browser automation tool
 	if cfg.Tools.Browser.Enabled {
-		var opts []browser.Option
-		if cfg.Tools.Browser.RemoteURL != "" {
-			opts = append(opts, browser.WithRemoteURL(cfg.Tools.Browser.RemoteURL))
-			slog.Info("browser tool enabled", "remote", cfg.Tools.Browser.RemoteURL)
+		if cfg.Tools.Browser.PinchTabURL != "" {
+			pt := browser.NewPinchTabManager(
+				cfg.Tools.Browser.PinchTabURL,
+				cfg.Tools.Browser.PinchTabToken,
+				time.Duration(cfg.Tools.Browser.ActionTimeoutMs)*time.Millisecond,
+			)
+			toolsReg.Register(browser.NewBrowserTool(pt))
+			slog.Info("browser tool enabled (PinchTab)", "url", cfg.Tools.Browser.PinchTabURL)
 		} else {
-			opts = append(opts, browser.WithHeadless(cfg.Tools.Browser.Headless))
-			slog.Info("browser tool enabled", "headless", cfg.Tools.Browser.Headless)
+			var opts []browser.Option
+			if cfg.Tools.Browser.RemoteURL != "" {
+				opts = append(opts, browser.WithRemoteURL(cfg.Tools.Browser.RemoteURL))
+				slog.Info("browser tool enabled (go-rod remote)", "cdp", cfg.Tools.Browser.RemoteURL)
+			} else {
+				opts = append(opts, browser.WithHeadless(cfg.Tools.Browser.Headless))
+				slog.Info("browser tool enabled (go-rod local)", "headless", cfg.Tools.Browser.Headless)
+			}
+			if cfg.Tools.Browser.ActionTimeoutMs > 0 {
+				opts = append(opts, browser.WithActionTimeout(time.Duration(cfg.Tools.Browser.ActionTimeoutMs)*time.Millisecond))
+			}
+			if cfg.Tools.Browser.IdleTimeoutMs > 0 {
+				opts = append(opts, browser.WithIdleTimeout(time.Duration(cfg.Tools.Browser.IdleTimeoutMs)*time.Millisecond))
+			} else if cfg.Tools.Browser.IdleTimeoutMs < 0 {
+				// Explicitly disable idle reaper with negative value
+				opts = append(opts, browser.WithIdleTimeout(0))
+			}
+			if cfg.Tools.Browser.MaxPages > 0 {
+				opts = append(opts, browser.WithMaxPages(cfg.Tools.Browser.MaxPages))
+			}
+			browserMgr = browser.New(opts...)
+			toolsReg.Register(browser.NewBrowserTool(browserMgr))
 		}
-		if cfg.Tools.Browser.ActionTimeoutMs > 0 {
-			opts = append(opts, browser.WithActionTimeout(time.Duration(cfg.Tools.Browser.ActionTimeoutMs)*time.Millisecond))
-		}
-		if cfg.Tools.Browser.IdleTimeoutMs > 0 {
-			opts = append(opts, browser.WithIdleTimeout(time.Duration(cfg.Tools.Browser.IdleTimeoutMs)*time.Millisecond))
-		} else if cfg.Tools.Browser.IdleTimeoutMs < 0 {
-			// Explicitly disable idle reaper with negative value
-			opts = append(opts, browser.WithIdleTimeout(0))
-		}
-		if cfg.Tools.Browser.MaxPages > 0 {
-			opts = append(opts, browser.WithMaxPages(cfg.Tools.Browser.MaxPages))
-		}
-		browserMgr = browser.New(opts...)
-		toolsReg.Register(browser.NewBrowserTool(browserMgr))
 	}
 
 	// Web tools (web_fetch; web_search is registered in wireExtraTools after stores are ready)
@@ -595,4 +605,3 @@ func setupSkillsSystem(
 
 	return skillsLoader, skillSearchTool, globalSkillsDir, bundledSkillsDir, builtinSkillsDir
 }
-

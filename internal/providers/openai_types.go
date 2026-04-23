@@ -1,5 +1,7 @@
 package providers
 
+import "encoding/json"
+
 // OpenAI API response types (internal)
 
 type openAIResponse struct {
@@ -18,6 +20,26 @@ type openAIMessage struct {
 	ReasoningContent string           `json:"reasoning_content,omitempty"`
 	Reasoning        string           `json:"reasoning,omitempty"` // Ollama alias for reasoning_content
 	ToolCalls        []openAIToolCall `json:"tool_calls,omitempty"`
+}
+
+func (m *openAIMessage) UnmarshalJSON(data []byte) error {
+	type alias struct {
+		Role             string           `json:"role"`
+		Content          json.RawMessage  `json:"content"`
+		ReasoningContent string           `json:"reasoning_content,omitempty"`
+		Reasoning        string           `json:"reasoning,omitempty"`
+		ToolCalls        []openAIToolCall `json:"tool_calls,omitempty"`
+	}
+	var raw alias
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	m.Role = raw.Role
+	m.Content = decodeOpenAITextContent(raw.Content)
+	m.ReasoningContent = raw.ReasoningContent
+	m.Reasoning = raw.Reasoning
+	m.ToolCalls = raw.ToolCalls
+	return nil
 }
 
 type openAIToolCall struct {
@@ -65,6 +87,24 @@ type openAIStreamDelta struct {
 	ReasoningContent string                 `json:"reasoning_content,omitempty"`
 	Reasoning        string                 `json:"reasoning,omitempty"` // Ollama alias for reasoning_content
 	ToolCalls        []openAIStreamToolCall `json:"tool_calls,omitempty"`
+}
+
+func (d *openAIStreamDelta) UnmarshalJSON(data []byte) error {
+	type alias struct {
+		Content          json.RawMessage        `json:"content,omitempty"`
+		ReasoningContent string                 `json:"reasoning_content,omitempty"`
+		Reasoning        string                 `json:"reasoning,omitempty"`
+		ToolCalls        []openAIStreamToolCall `json:"tool_calls,omitempty"`
+	}
+	var raw alias
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	d.Content = decodeOpenAITextContent(raw.Content)
+	d.ReasoningContent = raw.ReasoningContent
+	d.Reasoning = raw.Reasoning
+	d.ToolCalls = raw.ToolCalls
+	return nil
 }
 
 type openAIStreamToolCall struct {

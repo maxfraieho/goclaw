@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/store"
@@ -13,12 +14,13 @@ import (
 )
 
 // BrowserTool implements tools.Tool for browser automation.
+// Accepts any Backend: Manager (go-rod/CDP) or PinchTabManager (PinchTab HTTP API).
 type BrowserTool struct {
-	manager *Manager
+	manager Backend
 }
 
-// NewBrowserTool creates a BrowserTool wrapping a Manager.
-func NewBrowserTool(manager *Manager) *BrowserTool {
+// NewBrowserTool creates a BrowserTool wrapping a Backend implementation.
+func NewBrowserTool(manager Backend) *BrowserTool {
 	return &BrowserTool{manager: manager}
 }
 
@@ -147,7 +149,7 @@ func (t *BrowserTool) Execute(ctx context.Context, args map[string]any) *tools.R
 	switch action {
 	case "open", "snapshot", "screenshot", "navigate", "act", "tabs":
 		if err := t.manager.Start(ctx); err != nil {
-			return tools.ErrorResult(fmt.Sprintf("failed to start browser: %v", err))
+			return tools.ErrorResult(formatBrowserStartError(err))
 		}
 	}
 
@@ -156,7 +158,10 @@ func (t *BrowserTool) Execute(ctx context.Context, args map[string]any) *tools.R
 	case "open", "navigate", "snapshot", "screenshot", "act":
 		timeout := t.manager.ActionTimeout()
 		if ms, ok := args["timeoutMs"].(float64); ok && ms > 0 {
-			timeout = time.Duration(ms) * time.Millisecond
+			requested := time.Duration(ms) * time.Millisecond
+			if requested > timeout {
+				timeout = requested
+			}
 		}
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
@@ -198,9 +203,38 @@ func (t *BrowserTool) handleStatus() *tools.Result {
 
 func (t *BrowserTool) handleStart(ctx context.Context) *tools.Result {
 	if err := t.manager.Start(ctx); err != nil {
-		return tools.ErrorResult(fmt.Sprintf("failed to start browser: %v", err))
+		return tools.ErrorResult(formatBrowserStartError(err))
 	}
 	return tools.NewResult("Browser started successfully.")
+}
+
+func formatBrowserStartError(err error) string {
+	msg := fmt.Sprintf("failed to start browser: %v", err)
+	if hint := browserStartHint(err); hint != "" {
+		msg += "\n\n[BROWSER] " + hint
+	}
+	return msg
+}
+
+func browserStartHint(err error) string {
+	if err == nil {
+		return ""
+	}
+	lower := strings.ToLower(err.Error())
+	if strings.Contains(lower, "can't find a browser binary") || strings.Contains(lower, "could not locate runnable browser") {
+		return "GoClaw is using the go-rod browser backend, but no local Chrome/Chromium binary was found. " +
+			"If this host should use PinchTab, set GOCLAW_BROWSER_PINCHTAB_URL (and GOCLAW_BROWSER_PINCHTAB_TOKEN if required) so the browser tool uses PinchTab instead of trying to launch local Chrome. " +
+			"If you intentionally use go-rod, install Chrome/Chromium or point GOCLAW_BROWSER_REMOTE_URL at a remote CDP endpoint."
+	}
+	if !strings.Contains(lower, "permission denied") &&
+		!strings.Contains(lower, "eacces") &&
+		!strings.Contains(lower, "operation not permitted") {
+		return ""
+	}
+	if strings.Contains(lower, "pinchtab") || strings.Contains(lower, "chrome") || strings.Contains(lower, "chromium") {
+		return "Chrome launch was denied by the host. For PinchTab on Alpine/OpenRC, start the daemon with PINCHTAB_CHROME_NO_SANDBOX=1. Also verify browser.binary or any wrapper script is executable and points to a readable Chrome/Chromium binary."
+	}
+	return "The browser process could not be launched by the host. Verify the configured browser binary exists and is executable."
 }
 
 func (t *BrowserTool) handleStop(ctx context.Context) *tools.Result {

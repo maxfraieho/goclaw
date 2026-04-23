@@ -15,7 +15,7 @@ import (
 
 // acpSessionEntry tracks a live ACP session for one goclaw conversation.
 type acpSessionEntry struct {
-	id       string       // ACP session ID returned by session/new or session/load
+	id       string          // ACP session ID returned by session/new or session/load
 	proc     *acp.ACPProcess // process that owns this session (for respawn detection)
 	lastUsed time.Time
 }
@@ -101,10 +101,13 @@ func NewACPProvider(binary string, args []string, workDir string, idleTTL time.D
 	return p
 }
 
-// sessionReaper removes ACP sessions idle for more than 30 minutes.
+// sessionReaper removes ACP sessions idle for more than 2 hours.
+// Long-running survey flows can sit idle for extended periods while the user or
+// remote page blocks on timers/cooldowns, so the reaper must tolerate at least
+// hour-long pauses without dropping the ACP session.
 // Sends session/cancel to release resources on the agent side before purging locally.
 func (p *ACPProvider) sessionReaper() {
-	const sessionIdleTTL = 30 * time.Minute
+	const sessionIdleTTL = 2 * time.Hour
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 	for {

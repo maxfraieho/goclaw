@@ -68,7 +68,7 @@ func (p *OpenAIProvider) parseResponse(resp *openAIResponse) *ChatResponse {
 
 	if len(resp.Choices) > 0 {
 		msg := resp.Choices[0].Message
-		result.Content = msg.Content
+		result.Content = stripLeakedToolMarkup(msg.Content)
 		result.Thinking = msg.ReasoningContent
 		if result.Thinking == "" {
 			result.Thinking = msg.Reasoning

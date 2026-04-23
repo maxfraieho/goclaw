@@ -133,9 +133,10 @@ func (p *OpenAIProvider) ChatStream(ctx context.Context, req ChatRequest, onChun
 			}
 		}
 		if delta.Content != "" {
-			result.Content += delta.Content
+			cleanContent := stripLeakedToolMarkup(delta.Content)
+			result.Content += cleanContent
 			if onChunk != nil {
-				onChunk(StreamChunk{Content: delta.Content})
+				onChunk(StreamChunk{Content: cleanContent})
 			}
 		}
 
