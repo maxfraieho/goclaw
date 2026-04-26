@@ -98,6 +98,7 @@ Example service files are included in:
 
 - `deploy/systemd/goclaw.service`
 - `deploy/systemd/pinchtab.service`
+- `deploy/openrc/goclaw.initd`
 
 The PinchTab host config template is included in:
 
@@ -110,6 +111,12 @@ GoClaw:
 
 ```sh
 curl -fsS http://127.0.0.1:18790/health
+```
+
+OpenRC watchdog:
+
+```sh
+/home/vokov/projects/goclaw/scripts/goclaw-healthcheck.sh
 ```
 
 PinchTab:
@@ -136,3 +143,5 @@ Browser flow:
 - Do not copy agent data blindly if agents on the new host should differ.
 - The committed code already includes the PinchTab backend and Linux Mint handoff changes.
 - Proxy docs were committed separately so the new server can be made to behave the same way as this one.
+- On Alpine/OpenRC, prefer `deploy/openrc/goclaw.initd` over a bare background script so GoClaw respawns after crashes.
+- For survey/browser workloads, run `scripts/goclaw-healthcheck.sh` from cron every minute to recover from a stuck-but-still-running process.

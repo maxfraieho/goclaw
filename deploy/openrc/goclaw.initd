@@ -1,0 +1,26 @@
+#!/sbin/openrc-run
+
+supervisor=supervise-daemon
+
+name="goclaw"
+description="GoClaw AI Agent Gateway"
+
+command="/home/vokov/projects/goclaw/start-goclaw.sh"
+command_user="vokov:vokov"
+directory="/home/vokov/projects/goclaw"
+pidfile="/run/${RC_SVCNAME}.pid"
+
+retry="TERM/30/KILL/10"
+supervise_daemon_args="--respawn-delay 5"
+
+output_log="/var/log/goclaw.log"
+error_log="/var/log/goclaw.log"
+
+depend() {
+    need net
+    after docker postgresql pinchtab nginx
+}
+
+start_pre() {
+    checkpath -f -m 0644 -o vokov:vokov "$output_log" "$error_log"
+}

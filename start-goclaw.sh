@@ -1,6 +1,24 @@
 #!/bin/sh
-cd /home/vokov/projects/goclaw
+set -eu
+
+ROOT_DIR="/home/vokov/projects/goclaw"
+ENV_FILE="$ROOT_DIR/.env.local"
+BIN_PATH="$ROOT_DIR/goclaw"
+
+cd "$ROOT_DIR"
+
+if [ ! -f "$ENV_FILE" ]; then
+    echo "start-goclaw: missing env file: $ENV_FILE" >&2
+    exit 1
+fi
+
+if [ ! -x "$BIN_PATH" ]; then
+    echo "start-goclaw: missing executable binary: $BIN_PATH" >&2
+    exit 1
+fi
+
 set -a
-. /home/vokov/projects/goclaw/.env.local
+. "$ENV_FILE"
 set +a
-exec /home/vokov/projects/goclaw/goclaw
+
+exec "$BIN_PATH"
